@@ -61,7 +61,7 @@ interface Props {
   defaultADayTiming: 'SIMULTANEOUS' | 'AFTER_POSITION_SELECTION' | null | undefined;
   termParticipation: Record<string, { assignmentId: string; sourceRef?: string }> | undefined;
   commandsBlocked: boolean;
-  onCanonicalChange: () => void;
+  onCanonicalChange: (minimumSequence: number) => Promise<void>;
 }
 
 function failureMessage(code: string | undefined) {
@@ -105,6 +105,10 @@ export function AdministratorOverride(props: Props) {
   } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savedSequence, setSavedSequence] = useState<{
+    sessionId: string;
+    sequence: number;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const pending = useRef<{ fingerprint: string; commandId: string } | null>(null);
   const requestGeneration = useRef(0);
@@ -187,10 +191,15 @@ export function AdministratorOverride(props: Props) {
   const reviewed = review?.fingerprint === fingerprint ? review.preview : null;
   const draftRef = useRef(fingerprint);
   draftRef.current = fingerprint;
+  const waitingForCanonical =
+    savedSequence !== null &&
+    savedSequence.sessionId === props.bidSessionId &&
+    props.sequence < savedSequence.sequence;
+  const controlsBusy = busy || waitingForCanonical;
   const canPreview =
     props.allowed &&
     !props.commandsBlocked &&
-    !busy &&
+    !controlsBusy &&
     draft.memberId !== null &&
     memberIds.includes(draft.memberId) &&
     draft.reason.trim().length <= 500 &&
@@ -296,8 +305,13 @@ export function AdministratorOverride(props: Props) {
       const body = (await response.json().catch(() => null)) as
         | (OverridePreview & { code?: string; error?: string })
         | null;
-      if (generation !== requestGeneration.current || draftRef.current !== submittedFingerprint)
+      if (generation !== requestGeneration.current) return;
+      if (draftRef.current !== submittedFingerprint) {
+        setNotice(
+          'The bid changed while this action was being reviewed. Your draft is retained. Review again before confirming.',
+        );
         return;
+      }
       if (!response.ok || body?.valid !== true)
         throw new Error(failureMessage(body?.code ?? body?.error));
       if (
@@ -348,6 +362,7 @@ export function AdministratorOverride(props: Props) {
       );
       const result = (await response.json().catch(() => null)) as {
         kind?: string;
+        seq?: number;
         code?: string;
         error?: string;
       } | null;
@@ -355,6 +370,13 @@ export function AdministratorOverride(props: Props) {
       if (!response.ok || result?.kind !== 'accepted')
         throw new Error(failureMessage(result?.code ?? result?.error));
       pending.current = null;
+      // An accepted canonical command advances at least one sequence, even if its response
+      // omitted the sequence. Wait for readback rather than enabling a draft against old props.
+      const minimumSequence =
+        typeof result.seq === 'number' && Number.isSafeInteger(result.seq)
+          ? Math.max(body.expectedSeq + 1, result.seq)
+          : body.expectedSeq + 1;
+      setSavedSequence({ sessionId: props.bidSessionId, sequence: minimumSequence });
       requestGeneration.current += 1;
       setReview(null);
       setAcknowledged(false);
@@ -369,7 +391,7 @@ export function AdministratorOverride(props: Props) {
         termConfirmed: false,
         termEvidence: '',
       }));
-      setNotice(
+      const recordedNotice =
         draft.action === 'AWARD'
           ? draft.forced
             ? 'Forced assignment recorded and marked in the bid. Review the refreshed state before another action.'
@@ -380,9 +402,13 @@ export function AdministratorOverride(props: Props) {
               ? 'Temporary duty saved.'
               : draft.action === 'DEFER_STAGE'
                 ? 'Current step deferred. Its unawarded turns remain pending for later selection.'
-                : 'Member skipped for now. Their unawarded selection rights remain pending.',
-      );
-      props.onCanonicalChange();
+                : 'Member skipped for now. Their unawarded selection rights remain pending.';
+      setNotice(recordedNotice);
+      try {
+        await props.onCanonicalChange(minimumSequence);
+      } catch {
+        setNotice(`${recordedNotice} Refresh bid updates before recording another action.`);
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The action could not be recorded.');
     } finally {
@@ -396,7 +422,7 @@ export function AdministratorOverride(props: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          disabled={props.commandsBlocked || busy}
+          disabled={props.commandsBlocked || controlsBusy}
           onClick={() => {
             const initialMemberId = operator?.selectedMemberId ?? props.currentMemberId;
             change({
@@ -465,7 +491,7 @@ export function AdministratorOverride(props: Props) {
             <NativeSelect
               aria-label="Administrator override action"
               value={draft.action}
-              disabled={busy}
+              disabled={controlsBusy}
               onChange={(event) =>
                 change({
                   action: event.target.value as Action,
@@ -493,7 +519,7 @@ export function AdministratorOverride(props: Props) {
               <Input
                 aria-label="Find override member"
                 value={memberQuery}
-                disabled={busy}
+                disabled={controlsBusy}
                 onChange={(event) => setMemberQuery(event.target.value)}
                 placeholder="Name, rank or employee number"
               />
@@ -504,7 +530,7 @@ export function AdministratorOverride(props: Props) {
             <NativeSelect
               aria-label="Administrator override member"
               value={draft.memberId ?? ''}
-              disabled={busy || draft.action === 'DEFER_STAGE'}
+              disabled={controlsBusy || draft.action === 'DEFER_STAGE'}
               onChange={(event) => {
                 const id = event.target.value ? Number(event.target.value) : null;
                 change({
@@ -553,7 +579,7 @@ export function AdministratorOverride(props: Props) {
                   className="mt-1 size-4"
                   aria-label="Member confirms voluntary term departure"
                   checked={draft.termConfirmed}
-                  disabled={busy}
+                  disabled={controlsBusy}
                   onChange={(event) => change({ termConfirmed: event.target.checked })}
                 />
                 Member explicitly chose to leave the current term assignment.
@@ -563,7 +589,7 @@ export function AdministratorOverride(props: Props) {
                 <Input
                   aria-label="Voluntary departure evidence"
                   value={draft.termEvidence}
-                  disabled={busy}
+                  disabled={controlsBusy}
                   onChange={(event) => change({ termEvidence: event.target.value })}
                 />
               </Label>
@@ -582,7 +608,7 @@ export function AdministratorOverride(props: Props) {
                   <NativeSelect
                     aria-label="Override position shift"
                     value={shiftFilter}
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onChange={(event) => setShiftFilter(event.target.value)}
                   >
                     <option value="">All shifts</option>
@@ -600,7 +626,7 @@ export function AdministratorOverride(props: Props) {
                   <NativeSelect
                     aria-label="Override position rank"
                     value={rankFilter}
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onChange={(event) => setRankFilter(event.target.value)}
                   >
                     <option value="">All ranks</option>
@@ -619,7 +645,7 @@ export function AdministratorOverride(props: Props) {
                 <Input
                   aria-label="Find override position"
                   value={positionQuery}
-                  disabled={busy}
+                  disabled={controlsBusy}
                   onChange={(event) => setPositionQuery(event.target.value)}
                   placeholder="Position, station or unit"
                 />
@@ -629,7 +655,7 @@ export function AdministratorOverride(props: Props) {
                 <NativeSelect
                   aria-label="Administrator override open position"
                   value={draft.positionId}
-                  disabled={busy}
+                  disabled={controlsBusy}
                   onChange={(event) => change({ positionId: event.target.value, aDay: '' })}
                 >
                   <option value="">Choose an open position</option>
@@ -648,7 +674,7 @@ export function AdministratorOverride(props: Props) {
                       type="checkbox"
                       aria-label="Pick A-Day later"
                       checked={draft.deferADay}
-                      disabled={busy}
+                      disabled={controlsBusy}
                       onChange={(event) => change({ deferADay: event.target.checked, aDay: '' })}
                     />
                     Pick A-Day later
@@ -659,7 +685,7 @@ export function AdministratorOverride(props: Props) {
                       <NativeSelect
                         aria-label="Administrator override A-Day"
                         value={draft.aDay}
-                        disabled={busy}
+                        disabled={controlsBusy}
                         onChange={(event) => change({ aDay: event.target.value })}
                       >
                         <option value="">
@@ -694,7 +720,7 @@ export function AdministratorOverride(props: Props) {
                   <NativeSelect
                     aria-label="Administrator override A-Day"
                     value={draft.aDay}
-                    disabled={busy}
+                    disabled={controlsBusy}
                     onChange={(event) => change({ aDay: event.target.value })}
                   >
                     <option value="">
@@ -722,7 +748,7 @@ export function AdministratorOverride(props: Props) {
                 <Input
                   aria-label="Adjustment duty label"
                   value={draft.roleLabel}
-                  disabled={busy}
+                  disabled={controlsBusy}
                   placeholder="Enter the directed duty"
                   onChange={(event) => change({ roleLabel: event.target.value })}
                 />
@@ -734,7 +760,7 @@ export function AdministratorOverride(props: Props) {
                 <NativeSelect
                   aria-label="Adjustment closed role"
                   value={draft.positionId}
-                  disabled={busy}
+                  disabled={controlsBusy}
                   onChange={(event) => change({ positionId: event.target.value })}
                 >
                   <option value="">Custom duty</option>
@@ -759,7 +785,7 @@ export function AdministratorOverride(props: Props) {
               aria-label="Note (optional)"
               value={draft.reason}
               maxLength={500}
-              disabled={busy}
+              disabled={controlsBusy}
               onChange={(event) => change({ reason: event.target.value })}
               placeholder="Add context if helpful"
             />
@@ -771,14 +797,14 @@ export function AdministratorOverride(props: Props) {
                 aria-label="Mark as forced assignment"
                 className="mt-1 size-4"
                 checked={draft.forced}
-                disabled={busy}
+                disabled={controlsBusy}
                 onChange={(event) => change({ forced: event.target.checked })}
               />
               Mark as forced assignment
             </Label>
           ) : null}
           <Button type="button" disabled={!canPreview} onClick={() => void preview()}>
-            {busy ? 'Checking…' : 'Review adjustment'}
+            {waitingForCanonical ? 'Updating bid…' : busy ? 'Checking…' : 'Review adjustment'}
           </Button>
           {review && reviewed === null ? (
             <p role="alert" className="text-sm text-warning">
@@ -837,7 +863,7 @@ export function AdministratorOverride(props: Props) {
                   className="mt-1 size-4"
                   aria-label="I acknowledge the override advisories"
                   checked={acknowledged}
-                  disabled={busy || props.commandsBlocked}
+                  disabled={controlsBusy || props.commandsBlocked}
                   onChange={(event) => setAcknowledged(event.target.checked)}
                 />
                 I reviewed the adjustment and advisories.
@@ -859,7 +885,12 @@ export function AdministratorOverride(props: Props) {
               </Button>
             </section>
           ) : null}
-          {notice ? <output className="block text-sm">{notice}</output> : null}
+          {notice ? (
+            <output className="block text-sm" aria-live="polite">
+              {notice}
+              {waitingForCanonical ? ' Updating bid…' : ''}
+            </output>
+          ) : null}
         </div>
       </TaskPanel>
     </div>

@@ -107,8 +107,9 @@ let commands: Record<string, unknown>[];
 let previewIdentityWrong: boolean;
 let failCommandOnce: boolean;
 let scoreReceiptSha256: string | null;
+let previewDelay: Promise<void> | null;
 let props: Parameters<typeof AdministratorOverride>[0];
-let canonicalChange: ReturnType<typeof vi.fn<() => void>>;
+let canonicalChange: ReturnType<typeof vi.fn<(minimumSequence: number) => Promise<void>>>;
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -122,7 +123,10 @@ beforeEach(() => {
   previewIdentityWrong = false;
   failCommandOnce = false;
   scoreReceiptSha256 = null;
-  canonicalChange = vi.fn<() => void>();
+  previewDelay = null;
+  canonicalChange = vi
+    .fn<(minimumSequence: number) => Promise<void>>()
+    .mockResolvedValue(undefined);
   props = {
     bidSessionId: 'isolated-synthetic',
     allowed: true,
@@ -150,6 +154,7 @@ beforeEach(() => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (url.endsWith('/commands/live/preview')) {
       previews.push(body);
+      if (previewDelay) await previewDelay;
       return response({
         valid: true,
         expectedSeq: body.expectedSeq,
@@ -176,7 +181,7 @@ beforeEach(() => {
         failCommandOnce = false;
         throw new Error('Synthetic response lost.');
       }
-      return response({ kind: 'accepted' });
+      return response({ kind: 'accepted', seq: Number(body.expectedSeq) + 1 });
     }
     throw new Error(`Unexpected request ${url}`);
   });
@@ -488,6 +493,124 @@ describe('audited administrator override', () => {
     expect(container.textContent).toContain('Review the override again before confirming.');
     expect(container.textContent).not.toContain('Confirm administrator selection');
     expect(commands).toHaveLength(0);
+  });
+  it('waits for the saved canonical sequence before another draft or review', async () => {
+    let finishRefresh: (() => void) | undefined;
+    canonicalChange.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve;
+        }),
+    );
+    await mount();
+    await draftAward();
+    await reviewAndAcknowledge();
+    await settle(() => button('Confirm administrator selection').click());
+
+    expect(commands).toHaveLength(1);
+    expect(canonicalChange).toHaveBeenCalledWith(5);
+    expect(container.textContent).toContain('Selection saved.');
+    expect(button('Updating bid').disabled).toBe(true);
+    expect(
+      (
+        container.querySelector(
+          'select[aria-label="Administrator override member"]',
+        ) as unknown as HTMLSelectElement
+      ).disabled,
+    ).toBe(true);
+    await settle(() => button('Updating bid').click());
+    expect(previews).toHaveLength(1);
+
+    props = { ...props, sequence: 5, fills: { A101: { member_id: 18, a_day: 'G2' } } };
+    await settle(() => root?.render(<AdministratorOverride {...props} />));
+    await settle(() => finishRefresh?.());
+    await select('Administrator override member', '19');
+    await select('Administrator override open position', 'C103');
+    await select('Administrator override A-Day', 'G3');
+    await settle(() => button('Review adjustment').click());
+    expect(previews).toHaveLength(2);
+    expect(previews[1]?.expectedSeq).toBe(5);
+    expect(container.textContent).toContain('Confirm administrator selection');
+    expect(commands).toHaveLength(1);
+  });
+  it.each(['rejected', 'thrown'] as const)(
+    'keeps an accepted save successful when canonical refresh fails (%s)',
+    async (failure) => {
+      if (failure === 'rejected')
+        canonicalChange.mockRejectedValueOnce(new Error('Synthetic bid updates unavailable.'));
+      else
+        canonicalChange.mockImplementationOnce(() => {
+          throw new Error('Synthetic bid updates unavailable.');
+        });
+      await mount();
+      await draftAward();
+      await reviewAndAcknowledge();
+      await settle(() => button('Confirm administrator selection').click());
+
+      expect(container.textContent).toContain('Selection saved.');
+      expect(container.textContent).toContain('Refresh bid updates');
+      expect(container.textContent).not.toContain('could not be recorded');
+      expect(container.textContent).not.toContain('Confirm administrator selection');
+      expect(button('Updating bid').disabled).toBe(true);
+      expect(
+        (
+          container.querySelector(
+            'select[aria-label="Administrator override member"]',
+          ) as unknown as HTMLSelectElement
+        ).disabled,
+      ).toBe(true);
+      expect(commands).toHaveLength(1);
+      await settle(() => button('Updating bid').click());
+      expect(commands).toHaveLength(1);
+
+      props = { ...props, sequence: 5, fills: { A101: { member_id: 18, a_day: 'G2' } } };
+      await settle(() => root?.render(<AdministratorOverride {...props} />));
+      await select('Administrator override member', '19');
+      await select('Administrator override open position', 'C103');
+      await select('Administrator override A-Day', 'G3');
+      await settle(() => button('Review adjustment').click());
+      expect(previews[1]?.expectedSeq).toBe(5);
+      expect(commands).toHaveLength(1);
+    },
+  );
+  it('explains a canonical update during an outstanding review and retains the draft', async () => {
+    let finishPreview: (() => void) | undefined;
+    previewDelay = new Promise<void>((resolve) => {
+      finishPreview = resolve;
+    });
+    await mount();
+    await draftAward();
+    await settle(() => button('Review adjustment').click());
+    expect(button('Checking').disabled).toBe(true);
+    props = { ...props, sequence: 5 };
+    await settle(() => root?.render(<AdministratorOverride {...props} />));
+    await settle(() => finishPreview?.());
+
+    expect(container.textContent).toContain(
+      'The bid changed while this action was being reviewed.',
+    );
+    expect(container.textContent).toContain('Your draft is retained.');
+    expect(
+      (
+        container.querySelector(
+          'select[aria-label="Administrator override member"]',
+        ) as unknown as HTMLSelectElement
+      ).value,
+    ).toBe('18');
+    expect(
+      (
+        container.querySelector(
+          'select[aria-label="Administrator override open position"]',
+        ) as unknown as HTMLSelectElement
+      ).value,
+    ).toBe('A101');
+    expect(container.textContent).not.toContain('Confirm administrator selection');
+    expect(commands).toHaveLength(0);
+
+    previewDelay = null;
+    await settle(() => button('Review adjustment').click());
+    expect(previews[1]?.expectedSeq).toBe(5);
+    expect(container.textContent).toContain('Confirm administrator selection');
   });
   it('rejects a preview for the wrong member identity', async () => {
     previewIdentityWrong = true;

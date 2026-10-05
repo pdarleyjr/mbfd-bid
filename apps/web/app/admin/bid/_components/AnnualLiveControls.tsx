@@ -1389,11 +1389,16 @@ export function AnnualLiveControls(props: Props) {
             defaultADayTiming={state.a_day_selection}
             termParticipation={state.term_participation}
             commandsBlocked={loadError !== null || authRefreshing || authReviewRequired || busy}
-            onCanonicalChange={() => {
-              void load().catch((error: unknown) =>
-                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
-              );
-              props.onCanonicalChange?.();
+            onCanonicalChange={async (minimumSequence) => {
+              try {
+                const sequence = await load();
+                if (!Number.isSafeInteger(sequence) || sequence < minimumSequence)
+                  throw new Error('The saved bid update has not arrived. Retry bid updates.');
+                props.onCanonicalChange?.();
+              } catch (error) {
+                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.');
+                throw error;
+              }
             }}
           />
         ) : null}
