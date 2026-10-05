@@ -159,9 +159,10 @@ beforeEach(() => {
       if (!reject && command.type === 'live.pause') livePhase = 'paused';
       if (!reject && command.type === 'live.resume') livePhase = 'position_bid';
       if (!reject && failReadAfterAward) updatesUnavailable = true;
+      if (!reject) liveSequence += 1;
       return reject
         ? response({ kind: 'rejected', code: 'LIVE_STAGE_NOT_ELIGIBLE' }, 409)
-        : response({ kind: 'accepted' });
+        : response({ kind: 'accepted', seq: liveSequence });
     }
     throw new Error(`Unexpected request ${url}`);
   });
@@ -253,7 +254,7 @@ describe('operator workspace interaction and history', () => {
       expect(button('Resume bid').disabled).toBe(false);
       expect(container.textContent?.includes('Find saved Mocks')).toBe(isMock);
       await settle(() => button('Resume bid').click());
-      expect(commands[1]).toMatchObject({ type: 'live.resume', expectedSeq: 4 });
+      expect(commands[1]).toMatchObject({ type: 'live.resume', expectedSeq: 5 });
       expect(container.textContent).toContain('Bid resumed. Continuing the saved turn.');
       expect(requests.some((url) => url.includes('/sessions/new'))).toBe(false);
       expect(commands.map((command) => command.type)).toEqual(['live.pause', 'live.resume']);
