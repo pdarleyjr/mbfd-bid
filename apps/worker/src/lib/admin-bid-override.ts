@@ -1,4 +1,10 @@
-import type { LiveBidCommand } from '@mbfd/shared';
+import type { LiveBidAction, LiveBidCommand } from '@mbfd/shared';
+
+/** Keep the established force-authorized preview boundary; only a reviewed
+ * stage adjustment uses its already-frozen transition approval grant. */
+export function liveBidPreviewActionForCommand(command: LiveBidCommand): LiveBidAction {
+  return command.type === 'live.transition_stage' ? 'approve_transition' : 'force';
+}
 
 export interface AdminBidOverrideWarning {
   code: string;

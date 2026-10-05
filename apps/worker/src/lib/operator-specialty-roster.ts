@@ -18,6 +18,7 @@ import {
   endedLiveSelectionRights,
 } from './canonical-specialty-priority.js';
 import type { projectFrozenCredentialCoverage } from './credential-coverage-advisory.js';
+import { activeLivePositionIds } from './live-bid-opportunities.js';
 import { hasFrozenPriorityPreference } from './position-priority-advisory.js';
 
 type Candidate = {
@@ -39,6 +40,7 @@ type Group = {
   rankingAvailable: boolean;
   dataBlockedMemberIds: number[];
   rankingCode?: string;
+  certificateInventory?: { credentialNames: string[] };
 };
 type Input = {
   sessionId: string;
@@ -47,6 +49,37 @@ type Input = {
   state: BidSessionState;
   credentialCoverage: ReturnType<typeof projectFrozenCredentialCoverage>;
 };
+
+const DOCUMENTED_OPERATIONS_CERTIFICATES = new Set([
+  'Hazardous Materials Operations',
+  'Rope Rescue Operations',
+  'Vehicle & Machinery Rescue Operations',
+  'Confined Space Operations',
+  'Structural Collapse Operations',
+  'Trench Rescue Operations',
+]);
+
+/** The frozen SO prerequisite supplies the display basis. It does not establish
+ * TRT membership or eligibility for any position. Missing or conflicting gates
+ * cannot manufacture a certificate cohort. */
+function operationsCertificateBasis(rules: readonly PositionRule[]): string[] | null {
+  const gates = rules
+    .flatMap((rule) => rule.pointsPreference.scoring?.so ?? [])
+    .flatMap((group) => group.items)
+    .map((item) => item.requiresAll)
+    .filter((names) => names.some((name) => DOCUMENTED_OPERATIONS_CERTIFICATES.has(name)));
+  if (
+    !gates.length ||
+    gates.some(
+      (names) =>
+        names.length !== DOCUMENTED_OPERATIONS_CERTIFICATES.size ||
+        new Set(names).size !== DOCUMENTED_OPERATIONS_CERTIFICATES.size ||
+        names.some((name) => !DOCUMENTED_OPERATIONS_CERTIFICATES.has(name)),
+    )
+  )
+    return null;
+  return gates[0] ? [...gates[0]] : null;
+}
 
 function profileSignature(rule: PositionRule, members: readonly FrozenBidEligibilityMember[]) {
   return canonicalize(
@@ -108,8 +141,16 @@ export function projectOperatorSpecialtyRoster(input: Input) {
       if (assignment.releasedAtMs === null) unavailableIds.add(assignment.memberId);
     for (const memberId of endedLiveSelectionRights(input.state, policy))
       unavailableIds.add(memberId);
+    const activePositionIds = new Set(
+      activeLivePositionIds(
+        input.state,
+        input.rules.map((rule) => rule.positionId),
+      ),
+    );
     const rules = input.rules.filter(
-      (rule) => positions.get(rule.positionId)?.bidParticipation === 'BIDDABLE',
+      (rule) =>
+        positions.get(rule.positionId)?.bidParticipation === 'BIDDABLE' &&
+        activePositionIds.has(rule.positionId),
     );
     const families = new Map<
       string,
@@ -277,6 +318,33 @@ export function projectOperatorSpecialtyRoster(input: Input) {
         rankingAvailable: rankingCode === undefined,
         dataBlockedMemberIds,
         ...(rankingCode ? { rankingCode } : {}),
+      });
+    }
+    const operationsCertificates = operationsCertificateBasis(rules);
+    if (operationsCertificates) {
+      const candidates = members
+        .filter((member) =>
+          operationsCertificates.every((name) => member.credentialNames.includes(name)),
+        )
+        .map((member) => ({
+          memberId: member.memberId,
+          priority: null,
+          points: null,
+          eligiblePositionIds: [],
+          available: !unavailableIds.has(member.memberId),
+        }));
+      groups.push({
+        id: 'inventory:trt-operations',
+        label: 'TRT · Operations certificates',
+        certificateInventory: { credentialNames: operationsCertificates },
+        positionIds: [],
+        candidates,
+        remainingSeatCount: null,
+        eligibleMemberCount: candidates.filter((candidate) => candidate.available).length,
+        status: null,
+        criticalMemberIds: [],
+        rankingAvailable: false,
+        dataBlockedMemberIds: [],
       });
     }
     // Split source scopes need distinguishable choices in the compact selector.

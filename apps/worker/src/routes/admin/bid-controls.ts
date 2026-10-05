@@ -18,13 +18,20 @@ import {
   commitLiveBidCommand,
   loadCanonicalBidSessionState,
 } from '../../commands/canonical-command-service.js';
-import { participantCoverageGaps } from '../../commands/live-bid-reducer.js';
+import {
+  liveBidActionForCommand,
+  participantCoverageGaps,
+} from '../../commands/live-bid-reducer.js';
 import { getDb } from '../../db/index.js';
 import { bidSessions } from '../../db/schema.js';
 import { hydrateADayState } from '../../durable/bid-session-aday-handlers.js';
 import type { BidSessionState } from '../../durable/bid-session-state.js';
-import { hasAdminBidOverride } from '../../lib/admin-bid-override.js';
+import {
+  hasAdminBidOverride,
+  liveBidPreviewActionForCommand,
+} from '../../lib/admin-bid-override.js';
 import { rankFrozenSpecialtyCandidates } from '../../lib/annual-specialty-policy.js';
+import { remainingAudienceQueue } from '../../lib/audience-bid-context.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { BidDefinitionSnapshotPinSchema } from '../../lib/bid-definition-pin.js';
 import { evaluateBidFallback } from '../../lib/bid-fallback.js';
@@ -44,6 +51,12 @@ import {
 import { projectFrozenCredentialCoverage } from '../../lib/credential-coverage-advisory.js';
 import { frozenADayConstraints } from '../../lib/frozen-a-day.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
+import {
+  activeLivePositionIds,
+  liveMemberHasOpenTurn,
+  liveTurnIsCompleted,
+  withdrawnLivePositionIds,
+} from '../../lib/live-bid-opportunities.js';
 import { currentLiveBidStage, liveBidSelectionStages } from '../../lib/live-bid-stages.js';
 import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { projectOperatorSpecialtyRoster } from '../../lib/operator-specialty-roster.js';
@@ -155,7 +168,10 @@ function projectFrozenSpecialtyCoverage(input: {
         }).map((candidate) => candidate.memberId),
       );
 
-      for (const positionId of specialty.opportunityPositionIds) {
+      for (const positionId of activeLivePositionIds(
+        input.canonical,
+        specialty.opportunityPositionIds,
+      )) {
         // One physical opportunity cannot be silently counted as two independent
         // specialty seats. Its policy relationship needs explicit review.
         if (positionIds.has(positionId))
@@ -449,9 +465,10 @@ router.get('/:id/specialty-review', async (c) => {
             ...byMember.get(id),
           };
         }),
-        eligible_related_position_ids: specialty.opportunityPositionIds.filter(
-          (id) => !state.fills[id],
-        ),
+        eligible_related_position_ids: activeLivePositionIds(
+          state,
+          specialty.opportunityPositionIds,
+        ).filter((id) => !state.fills[id]),
         a_day_timing: 'ORDINARY_TURN',
       },
     });
@@ -474,6 +491,7 @@ router.get('/:id/specialty-live', async (c) => {
     return c.json({ error: 'live_action_policy_missing' }, 409);
   const policy = frozen.snapshot.settings.livePolicy;
   const specialtyCoverage = projectFrozenSpecialtyCoverage({ frozen, canonical });
+  const withdrawn = withdrawnLivePositionIds(canonical);
   const credentialCoverage = projectFrozenCredentialCoverage({
     snapshot: frozen.snapshot,
     rules: frozen.coverage.rules,
@@ -565,32 +583,34 @@ router.get('/:id/specialty-live', async (c) => {
       eligible_position_ids:
         currentCandidateId === null
           ? []
-          : specialty.opportunityPositionIds.filter((positionId) => {
-              if (canonical.fills[positionId]) return false;
-              const rule = frozen.coverage.rules.find((entry) => entry.positionId === positionId);
-              const candidate = frozenEligibilityMemberForSession(
-                frozen.snapshot,
-                currentCandidateId,
-              );
-              if (
-                !rule ||
-                !candidate ||
-                !evaluateEligibility(eligibilityMemberFromFrozen(candidate), rule).eligible
-              )
-                return false;
-              return unresolvedSpecialtyPriority({
-                snapshot: frozen.snapshot,
-                state: canonical,
-                memberId: currentCandidateId,
-                positionId,
-                rule,
-                requestContext: {
-                  specialtyId: specialty.id,
+          : activeLivePositionIds(canonical, specialty.opportunityPositionIds).filter(
+              (positionId) => {
+                if (canonical.fills[positionId]) return false;
+                const rule = frozen.coverage.rules.find((entry) => entry.positionId === positionId);
+                const candidate = frozenEligibilityMemberForSession(
+                  frozen.snapshot,
+                  currentCandidateId,
+                );
+                if (
+                  !rule ||
+                  !candidate ||
+                  !evaluateEligibility(eligibilityMemberFromFrozen(candidate), rule).eligible
+                )
+                  return false;
+                return unresolvedSpecialtyPriority({
+                  snapshot: frozen.snapshot,
+                  state: canonical,
+                  memberId: currentCandidateId,
                   positionId,
-                  requesterMemberId: active.suspendedBidderId,
-                },
-              }).every((entry) => entry.candidateMemberIds.length === 0);
-            }),
+                  rule,
+                  requestContext: {
+                    specialtyId: specialty.id,
+                    positionId,
+                    requesterMemberId: active.suspendedBidderId,
+                  },
+                }).every((entry) => entry.candidateMemberIds.length === 0);
+              },
+            ),
       remaining_candidate_ids: active.candidateMemberIds.slice(active.candidateCursor),
       suspended_turn: true,
       resume: {
@@ -604,17 +624,22 @@ router.get('/:id/specialty-live', async (c) => {
     frozen.snapshot.ruleBookMaterial,
     policy,
     canonical.fills,
+    withdrawn,
   );
   const selectionMemberId = canonical.annual?.returningMemberId ?? canonical.currentBidderId;
   const selectionStages = liveBidSelectionStages(canonical, policy);
   const selectionStage = selectionStages[0];
-  const selectionPositionIds = [
+  const selectionPositionIds = activeLivePositionIds(canonical, [
     ...new Set(selectionStages.flatMap((stage) => stage.opportunityPositionIds)),
-  ];
+  ]);
   const currentStage = currentLiveBidStage(canonical, policy);
   const nextSelectionStage = currentStage
     ? policy.stages
-        .filter((stage) => stage.order > currentStage.order)
+        .filter(
+          (stage) =>
+            stage.order > currentStage.order &&
+            !liveTurnIsCompleted(canonical, { stageId: stage.id }),
+        )
         .sort((left, right) => left.order - right.order)[0]
     : undefined;
   const selectionMember =
@@ -643,14 +668,16 @@ router.get('/:id/specialty-live', async (c) => {
     : null;
   const amendmentEligiblePositionIds =
     amendmentStage && amendmentMember
-      ? amendmentStage.opportunityPositionIds.filter((positionId) => {
-          if (canonical.fills[positionId] !== undefined) return false;
-          const rule = frozen.coverage.rules.find((item) => item.positionId === positionId);
-          return (
-            rule !== undefined &&
-            evaluateEligibility(eligibilityMemberFromFrozen(amendmentMember), rule).eligible
-          );
-        })
+      ? activeLivePositionIds(canonical, amendmentStage.opportunityPositionIds).filter(
+          (positionId) => {
+            if (canonical.fills[positionId] !== undefined) return false;
+            const rule = frozen.coverage.rules.find((item) => item.positionId === positionId);
+            return (
+              rule !== undefined &&
+              evaluateEligibility(eligibilityMemberFromFrozen(amendmentMember), rule).eligible
+            );
+          },
+        )
       : [];
   const aDayExecution = policy.annualOperations?.aDay.execution;
   const aDayTimingByPosition = Object.fromEntries(
@@ -694,20 +721,45 @@ router.get('/:id/specialty-live', async (c) => {
     sequence: canonical.lastSeq,
     scoreReceiptSha256: frozen.snapshot.scoreReferenceSource?.receiptSha256 ?? null,
     admin_override_allowed: isLiveBidActionAuthorized(policy, 'force', c.get('claims').member_id),
-    specialty_review_position_ids: [
+    stage_controls: {
+      allowed: isLiveBidActionAuthorized(policy, 'approve_transition', c.get('claims').member_id),
+      current_stage_id: currentStage?.id ?? null,
+      stages: [...policy.stages]
+        .sort((left, right) => left.order - right.order)
+        .map((stage) => ({
+          id: stage.id,
+          label: stage.label,
+          completed: liveTurnIsCompleted(canonical, { stageId: stage.id }),
+        })),
+      withdrawable_position_ids: [
+        ...new Set(policy.stages.flatMap((stage) => stage.opportunityPositionIds)),
+      ].filter(
+        (id) =>
+          !withdrawn.has(id) &&
+          canonical.fills[id] === undefined &&
+          frozen.snapshot.ruleBookMaterial.positions.some(
+            (position) =>
+              position.id === id &&
+              position.bidParticipation === 'BIDDABLE' &&
+              !position.isExcludedFromCount,
+          ),
+      ),
+      withdrawn_position_ids: [...withdrawn],
+    },
+    specialty_review_position_ids: activeLivePositionIds(canonical, [
       ...new Set([
         ...(policy.annualOperations?.specialties ?? []).flatMap(
           (specialty) => specialty.opportunityPositionIds,
         ),
         ...frozen.coverage.rules.filter(hasFrozenPriorityPreference).map((rule) => rule.positionId),
       ]),
-    ],
+    ]),
     admin_override_member_ids: frozen.snapshot.members
       .filter((person) => person.pool !== 'EXCLUDED')
       .map((person) => person.memberId),
-    admin_override_position_ids: [
+    admin_override_position_ids: activeLivePositionIds(canonical, [
       ...new Set(policy.stages.flatMap((stage) => stage.opportunityPositionIds)),
-    ].filter((id) => canonical.fills[id] === undefined),
+    ]).filter((id) => canonical.fills[id] === undefined),
     current_phase: canonical.currentPhase,
     finalization_ready: canonical.annual?.completion != null,
     membership_distributions: policy.annualOperations?.membershipDistributions ?? [],
@@ -736,26 +788,38 @@ router.get('/:id/specialty-live', async (c) => {
         ? {
             from_position_id: latestFill[0],
             member_id: latestFill[1].memberId,
-            opportunity_position_ids: amendmentStage.opportunityPositionIds,
+            opportunity_position_ids: activeLivePositionIds(
+              canonical,
+              amendmentStage.opportunityPositionIds,
+            ),
             eligible_position_ids: amendmentEligiblePositionIds,
           }
         : null,
     dispositions: policy.dispositions,
-    unresolved_members: (canonical.annual?.unresolvedMemberIds ?? []).map(member),
+    unresolved_members: (canonical.annual?.unresolvedMemberIds ?? [])
+      .filter((id) => liveMemberHasOpenTurn(canonical, id))
+      .map(member),
     completion_blockers:
       canonical.annual && canonical.live
         ? participantCoverageGaps(canonical, canonical.live, policy, canonical.annual).map(member)
         : [],
     returning_member:
-      canonical.annual?.returningMemberId == null
+      canonical.annual?.returningMemberId == null ||
+      !liveMemberHasOpenTurn(canonical, canonical.annual.returningMemberId)
         ? null
         : member(canonical.annual.returningMemberId),
-    remaining_order: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => entry.memberId),
-    remaining_turns: canonical.bidOrder.slice(canonical.queueCursor).map((entry) => ({
-      memberId: entry.memberId,
-      stageId: entry.stageId ?? null,
-      stage_label: policy.stages.find((stage) => stage.id === entry.stageId)?.label ?? null,
-    })),
+    remaining_order: canonical.bidOrder
+      .slice(canonical.queueCursor)
+      .filter((entry) => !liveTurnIsCompleted(canonical, entry))
+      .map((entry) => entry.memberId),
+    remaining_turns: canonical.bidOrder
+      .slice(canonical.queueCursor)
+      .filter((entry) => !liveTurnIsCompleted(canonical, entry))
+      .map((entry) => ({
+        memberId: entry.memberId,
+        stageId: entry.stageId ?? null,
+        stage_label: policy.stages.find((stage) => stage.id === entry.stageId)?.label ?? null,
+      })),
     fills: Object.fromEntries(
       Object.entries(canonical.fills).map(([positionId, fill]) => [
         positionId,
@@ -774,18 +838,20 @@ router.get('/:id/specialty-live', async (c) => {
       id: specialty.id,
       label: specialty.label,
       mode: specialty.mode,
-      positions: specialty.opportunityPositionIds.map((positionId) => {
-        const position = frozen.snapshot.ruleBookMaterial.positions.find(
-          (item) => item.id === positionId,
-        );
-        return {
-          id: positionId,
-          label:
-            position === undefined
-              ? positionId
-              : `${position.station} ${position.unit} ${position.positionName}`,
-        };
-      }),
+      positions: activeLivePositionIds(canonical, specialty.opportunityPositionIds).map(
+        (positionId) => {
+          const position = frozen.snapshot.ruleBookMaterial.positions.find(
+            (item) => item.id === positionId,
+          );
+          return {
+            id: positionId,
+            label:
+              position === undefined
+                ? positionId
+                : `${position.station} ${position.unit} ${position.positionName}`,
+          };
+        },
+      ),
     })),
     specialty_coverage: specialtyCoverage,
     credential_coverage: credentialCoverage,
@@ -797,6 +863,9 @@ router.get('/:id/specialty-live', async (c) => {
       credentialCoverage,
     }),
     a_day_maximum_per_group: policy.annualOperations?.aDay.max ?? null,
+    a_day_pending_member_ids: remainingAudienceQueue(canonical, policy)
+      .filter((entry) => entry.pendingADay)
+      .map((entry) => entry.memberId),
     exceptional_assignments: (canonical.live?.exceptionalAssignments ?? [])
       .filter((entry) => entry.releasedAtMs === null)
       .map((entry) => ({
@@ -823,6 +892,7 @@ router.get('/:id/specialty-live', async (c) => {
         .filter(
           (id) =>
             canonical.fills[id] === undefined &&
+            !withdrawn.has(id) &&
             !opportunityPools.some(
               (pool) => pool.positionIds.includes(id) && pool.resolvedPositionId !== id,
             ),
@@ -875,8 +945,9 @@ router.post('/:id/commands/live/preview', requireStepUpAuth(), async (c) => {
   if (!state || !frozen.ok || frozen.snapshot.settings.v !== 3)
     return c.json({ error: 'live_action_policy_missing' }, 409);
   const policy = frozen.snapshot.settings.livePolicy;
-  if (!isLiveBidActionAuthorized(policy, 'force', c.get('claims').member_id))
-    return c.json({ error: 'live_action_forbidden', action: 'force' }, 403);
+  const previewAction = liveBidPreviewActionForCommand(command.data);
+  if (!isLiveBidActionAuthorized(policy, previewAction, c.get('claims').member_id))
+    return c.json({ error: 'live_action_forbidden', action: previewAction }, 403);
   const preview = await commitLiveBidCommand({
     db: c.env.DB,
     command: command.data,
@@ -989,41 +1060,7 @@ router.post('/:id/commands/live', requireStepUpAuth(), async (c) => {
     actor: { id: claims.member_id, role: 'admin' },
   });
   if (!command.success) return c.json({ error: 'invalid_live_bid_command' }, 400);
-  const action = hasAdminBidOverride(command.data)
-    ? 'force'
-    : command.data.type === 'live.record_fallback_response'
-      ? command.data.outcome === 'UNREACHABLE'
-        ? 'mark_unreachable'
-        : 'skip_defer'
-      : command.data.type === 'live.record_selection' || command.data.type === 'live.record_a_day'
-        ? 'record_selection'
-        : command.data.type === 'live.amend_selection' || command.data.type === 'live.correct_bid'
-          ? 'amend_selection'
-          : command.data.type === 'live.force_selection' ||
-              command.data.type === 'live.set_exceptional_assignment'
-            ? 'force'
-            : command.data.type === 'live.disposition'
-              ? command.data.disposition === 'UNREACHABLE'
-                ? 'mark_unreachable'
-                : 'skip_defer'
-              : command.data.type === 'live.transition_stage'
-                ? 'approve_transition'
-                : command.data.type === 'live.alter_order'
-                  ? 'alter_order'
-                  : command.data.type === 'live.complete_session'
-                    ? 'approve_final_results'
-                    : command.data.type === 'live.record_contact_attempt' ||
-                        command.data.type === 'live.declare_unreachable'
-                      ? 'mark_unreachable'
-                      : command.data.type === 'live.return_at_current_sequence'
-                        ? 'skip_defer'
-                        : command.data.type === 'live.set_presentation_mode'
-                          ? 'publish'
-                          : command.data.type === 'live.start_specialty_adjudication' ||
-                              command.data.type === 'live.resolve_specialty_candidate' ||
-                              command.data.type === 'live.close_specialty_adjudication'
-                            ? 'approve_transition'
-                            : 'pause_resume';
+  const action = liveBidActionForCommand(command.data);
   if (!isLiveBidActionAuthorized(frozen.snapshot.settings.livePolicy, action, claims.member_id))
     return c.json({ error: 'live_action_forbidden', action }, 403);
   const stub = c.env.BID_SESSION.get(c.env.BID_SESSION.idFromName(sessionId));

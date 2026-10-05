@@ -342,6 +342,123 @@ describe.each([
     ).toEqual({ count: 0 });
   }
 
+  it('reviews, records, replays and restores an exact open-slot withdrawal without rewriting frozen source', async () => {
+    const frozenBefore = h.sqlite
+      .prepare(
+        'SELECT snapshot_json,snapshot_sha256,bid_version_sha256 FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+      )
+      .get(SESSION);
+    const adjustment: LiveBidCommand = {
+      v: 1,
+      type: 'live.transition_stage',
+      commandId: '33333333-3333-4333-8333-333333333333',
+      bidSessionId: SESSION,
+      expectedSeq: 7,
+      actor: { id: MEMBER, role: 'admin' },
+      reason: '',
+      evidenceReference: null,
+      stageId: 'synthetic-ff',
+      withdrawOpenPositionIds: [POOL_FIRST],
+      adminOverride: { acknowledged: true, warningCodes: [] },
+    };
+    const preview = await commit(adjustment, true);
+    expect(preview.result.kind).toBe('accepted');
+    expectNoAwardEvidence();
+    if (preview.result.kind !== 'accepted') throw new Error('Expected adjustment preview');
+    expect(preview.result.envelope.payload).toMatchObject({
+      adminOverride: { warningCodes: ['OPPORTUNITY_WITHDRAWAL'] },
+    });
+    const confirmed = {
+      ...adjustment,
+      adminOverride: { acknowledged: true as const, warningCodes: ['OPPORTUNITY_WITHDRAWAL'] },
+    };
+    const accepted = await commit(confirmed);
+    expect(accepted.result.kind).toBe('accepted');
+    expect(accepted.canonicalState?.lastSeq).toBe(8);
+    expect(accepted.canonicalState?.live?.withdrawnPositionIds).toEqual([POOL_FIRST]);
+    const replay = await commit(confirmed);
+    expect(replay.result).toEqual(accepted.result);
+    expect(
+      h.sqlite.prepare('SELECT count(*) AS count FROM bids WHERE bid_session_id=?').get(SESSION),
+    ).toEqual({ count: 0 });
+    expect(
+      h.sqlite
+        .prepare(
+          'SELECT snapshot_json,snapshot_sha256,bid_version_sha256 FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+        )
+        .get(SESSION),
+    ).toEqual(frozenBefore);
+    const blocked = await commit({
+      v: 1,
+      type: commandType,
+      commandId: '44444444-4444-4444-8444-444444444444',
+      bidSessionId: SESSION,
+      expectedSeq: 8,
+      actor: { id: MEMBER, role: 'admin' },
+      reason: '',
+      evidenceReference: null,
+      memberId: MEMBER,
+      positionId: POOL_FIRST,
+      pool: { poolId: 'synthetic-pool' },
+    });
+    expect(blocked.result).toMatchObject({
+      kind: 'rejected',
+      code: 'POSITION_WITHDRAWN',
+      currentSeq: 8,
+    });
+    const restored = await commit({
+      v: 1,
+      type: 'live.transition_stage',
+      commandId: '55555555-5555-4555-8555-555555555555',
+      bidSessionId: SESSION,
+      expectedSeq: 8,
+      actor: { id: MEMBER, role: 'admin' },
+      reason: '',
+      evidenceReference: null,
+      stageId: 'synthetic-ff',
+      restoreOpenPositionIds: [POOL_FIRST],
+      adminOverride: { acknowledged: true, warningCodes: ['OPPORTUNITY_RESTORATION'] },
+    });
+    expect(restored.result.kind).toBe('accepted');
+    expect(restored.canonicalState?.live?.withdrawnPositionIds).toEqual([]);
+    expect(restored.canonicalState?.lastSeq).toBe(9);
+  });
+
+  it('rejects unacknowledged withdrawal, stale sequence and occupied changes without accepted mutations', async () => {
+    const adjustment: LiveBidCommand = {
+      v: 1,
+      type: 'live.transition_stage',
+      commandId: '33333333-3333-4333-8333-333333333333',
+      bidSessionId: SESSION,
+      expectedSeq: 7,
+      actor: { id: MEMBER, role: 'admin' },
+      reason: '',
+      evidenceReference: null,
+      stageId: 'synthetic-ff',
+      withdrawOpenPositionIds: [POOL_FIRST],
+      adminOverride: { acknowledged: true, warningCodes: [] },
+    };
+    expect((await commit(adjustment)).result).toMatchObject({
+      kind: 'rejected',
+      code: 'ADMIN_OVERRIDE_WARNING_ACKNOWLEDGEMENT_REQUIRED',
+    });
+    expectNoAwardEvidence();
+    expect(
+      (
+        await commit({
+          ...adjustment,
+          commandId: '66666666-6666-4666-8666-666666666666',
+          expectedSeq: 6,
+        })
+      ).result,
+    ).toMatchObject({ kind: 'rejected', code: 'STALE_SEQUENCE' });
+    state.fills[POOL_FIRST] = { memberId: MEMBER, ordinal: 1, bidId: 'previous' };
+    expect(
+      (await commit({ ...adjustment, commandId: '77777777-7777-4777-8777-777777777777' })).result,
+    ).toMatchObject({ kind: 'rejected', code: 'POSITION_FILLED' });
+    expectNoAwardEvidence();
+  });
+
   async function adminRequest(path: string, body: unknown) {
     const token = await signJwt(
       {

@@ -43,8 +43,47 @@ export type PresentationChiefAssignment = PresentationMember & {
   forced: true;
 };
 
-export type PresentationSeat = PresentationPosition & { chief_directed?: boolean };
-export type PresentationStation = { id: string; label: string; seats: PresentationSeat[] };
+export type PresentationADayCapacity = {
+  id: string;
+  label: string;
+  pool?: 'OFC' | 'FF';
+  maximum: number | null;
+  remaining: number | null;
+  used: number;
+};
+export type PresentationADayMember = PresentationMember & {
+  position_id: string;
+  forced: boolean;
+};
+export type PresentationADayGroup = {
+  shift: PresentationShift;
+  value: string;
+  maximum: number | null;
+  remaining: number | null;
+  used: number;
+  saved_override: boolean;
+  capacities: PresentationADayCapacity[];
+  members: PresentationADayMember[];
+};
+export type PresentationADay = {
+  availability: 'AVAILABLE' | 'UNAVAILABLE';
+  sequence: number;
+  groups: PresentationADayGroup[];
+  pending: Array<PresentationMember & { shift: PresentationShift; position_id: string }>;
+  code?: string;
+};
+
+export type PresentationSeat = PresentationPosition & {
+  chief_directed?: boolean;
+  a_day_capacity?: PresentationADayCapacity;
+};
+export type PresentationStation = {
+  id: string;
+  label: string;
+  seats: PresentationSeat[];
+  a_day_group?: PresentationADayGroup;
+  a_day_pending?: boolean;
+};
 export type PresentationStationPart = PresentationStation & { start: number; total: number };
 
 export function shiftLabel(shift: PresentationShift): string {
@@ -53,6 +92,76 @@ export function shiftLabel(shift: PresentationShift): string {
 
 function normalizedShift(shift: string): string {
   return /^(D|DAY|DAYS)$/i.test(shift.trim()) ? 'D' : shift.trim().toUpperCase();
+}
+
+/** Read-only rows from the public canonical projection. Capacity scopes can
+ * overlap, so their remaining values are displayed separately, never summed. */
+export function presentationADayStations(
+  projection: PresentationADay,
+  shift: PresentationShift,
+  positions: readonly PresentationPosition[],
+): PresentationStation[] {
+  if (projection.availability !== 'AVAILABLE') return [];
+  const byPosition = new Map(positions.map((position) => [position.id, position]));
+  const memberSeat = (
+    member: PresentationMember & { position_id: string; forced?: boolean },
+    id: string,
+    pending = false,
+  ): PresentationSeat => {
+    const position = byPosition.get(member.position_id);
+    return {
+      id,
+      shift,
+      station: '',
+      unit: member.position_id,
+      position_name: pending
+        ? 'A-Day pending'
+        : (position?.position_name ?? member.rank ?? 'Member'),
+      rank_required: position?.rank_required ?? member.rank ?? '',
+      filled_by: member,
+      forced: member.forced === true,
+    };
+  };
+  const stations: PresentationStation[] = projection.groups
+    .filter((group) => group.shift === shift)
+    .map((group) => {
+      const id = `a-day:${shift}:${group.value}`;
+      return {
+        id,
+        label: /^G[1-4]$/.test(group.value) ? `Group ${group.value.slice(1)}` : group.value,
+        a_day_group: group,
+        seats: [
+          ...group.capacities.map((capacity) => ({
+            id: `${id}:capacity:${capacity.id}`,
+            shift,
+            station: '',
+            unit: '',
+            position_name: capacity.label,
+            rank_required: '',
+            filled_by: null,
+            a_day_capacity: capacity,
+          })),
+          ...group.members.map((member) =>
+            memberSeat(member, `${id}:member:${member.member_id}:${member.position_id}`),
+          ),
+        ],
+      };
+    });
+  const pending = projection.pending.filter((member) => member.shift === shift);
+  if (pending.length)
+    stations.push({
+      id: `a-day:${shift}:pending`,
+      label: 'Pending A-Day',
+      a_day_pending: true,
+      seats: pending.map((member) =>
+        memberSeat(
+          member,
+          `a-day:${shift}:pending:${member.member_id}:${member.position_id}`,
+          true,
+        ),
+      ),
+    });
+  return stations;
 }
 
 export function presentationStations(
@@ -105,6 +214,7 @@ export function presentationBoardPages(
   width: number,
   height: number,
   measuredSeatHeights: Readonly<Record<string, number>> = {},
+  headingHeight = 46,
 ): { columns: number; pages: PresentationStationPart[][] } {
   const compact = width < 760;
   const columns = Math.max(
@@ -112,9 +222,13 @@ export function presentationBoardPages(
     Math.min(stations.length || 1, Math.floor(width / (compact ? 290 : 225))),
   );
   const rowHeight = compact ? 64 : width >= 2400 ? 48 : 36;
-  const availableHeight = Math.max(rowHeight, height - 46);
+  const availableHeight = Math.max(rowHeight, height - headingHeight);
   const parts: PresentationStationPart[] = [];
   for (const station of stations) {
+    if (station.seats.length === 0) {
+      parts.push({ ...station, start: 0, total: 0 });
+      continue;
+    }
     let start = 0;
     while (start < station.seats.length) {
       let usedHeight = 0;

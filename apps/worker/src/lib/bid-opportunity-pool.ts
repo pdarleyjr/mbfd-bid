@@ -76,17 +76,19 @@ export function projectBidOpportunityPools(
   material: FrozenRuleBookMaterial,
   policy: FrozenLiveBidPolicy,
   fills: Readonly<Record<string, unknown>>,
+  withdrawnPositionIds: ReadonlySet<string> = new Set(),
 ) {
   const validation = validateBidOpportunityPools(material, policy);
   const pools = policy.annualOperations?.opportunityPools ?? [];
   return pools.map((pool) => {
-    const open = pool.positionIds.filter((id) => fills[id] === undefined);
+    const active = pool.positionIds.filter((id) => !withdrawnPositionIds.has(id));
+    const open = active.filter((id) => fills[id] === undefined);
     const position = material.positions.find((entry) => entry.id === pool.positionIds[0]);
     return {
       ...pool,
       valid: validation.ok,
       code: validation.ok ? null : validation.code,
-      capacity: pool.positionIds.length,
+      capacity: active.length,
       remaining: open.length,
       resolvedPositionId: validation.ok ? (open[0] ?? null) : null,
       shift: position?.shift ?? null,
@@ -105,9 +107,12 @@ export function resolveBidPoolSelection(input: {
   /** Server-controlled: only a reviewed administrator override with the frozen
    * force grant may choose another exact open slot in this same valid pool. */
   allowNonSequentialSelection?: boolean;
+  withdrawnPositionIds?: ReadonlySet<string>;
 }): { ok: true; pool: BidOpportunityPool | null } | { ok: false; code: string } {
   const validation = validateBidOpportunityPools(input.material, input.policy);
   if (!validation.ok) return validation;
+  if (input.withdrawnPositionIds?.has(input.positionId))
+    return { ok: false, code: 'POSITION_WITHDRAWN' };
   const pools = input.policy.annualOperations?.opportunityPools ?? [];
   const memberOf = pools.find((pool) => pool.positionIds.includes(input.positionId));
   if (input.poolId === undefined)
@@ -117,7 +122,9 @@ export function resolveBidPoolSelection(input: {
   const pool = pools.find((entry) => entry.id === input.poolId);
   if (!pool || pool.id !== memberOf?.id)
     return { ok: false, code: 'OPPORTUNITY_POOL_SLOT_MISMATCH' };
-  const next = pool.positionIds.find((id) => input.fills[id] === undefined);
+  const next = pool.positionIds.find(
+    (id) => input.fills[id] === undefined && !input.withdrawnPositionIds?.has(id),
+  );
   if (!next) return { ok: false, code: 'OPPORTUNITY_POOL_FULL' };
   if (
     input.fills[input.positionId] !== undefined ||

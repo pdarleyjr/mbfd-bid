@@ -296,6 +296,105 @@ describe('annual live operator and presentation surfaces', () => {
   });
   afterEach(async () => teardownTestD1(h));
 
+  it.each([false, true].flatMap((isMock) => ['LIVE', 'HOLD'].map((mode) => ({ isMock, mode }))))(
+    'exposes only the displayed canonical A-Day awards through the existing member viewer (Mock=$isMock, mode=$mode)',
+    async ({ isMock, mode }) => {
+      const row = h.sqlite
+        .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION) as { state_json: string };
+      const state = JSON.parse(row.state_json);
+      const sessionId = isMock ? MOCK_SESSION : SESSION;
+      if (isMock) {
+        h.sqlite
+          .prepare(`INSERT INTO bid_sessions
+          (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock)
+          SELECT ?,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,1
+          FROM bid_sessions WHERE id=?`)
+          .run(sessionId, SESSION);
+        h.sqlite
+          .prepare(`INSERT INTO bid_session_policy_snapshots
+          (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at)
+          SELECT ?,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at
+          FROM bid_session_policy_snapshots WHERE bid_session_id=?`)
+          .run(sessionId, SESSION);
+      }
+      state.bidSessionId = sessionId;
+      state.live.presentation.mode = mode;
+      state.live.presentation.heldAtSeq = mode === 'HOLD' ? 7 : null;
+      if (mode === 'HOLD')
+        state.live.presentation.heldProjection.fills = {
+          A101: {
+            memberId: 1,
+            ordinal: 1,
+            bidId: 'held-pending',
+            aDayDeferral: {
+              positionId: 'A101',
+              commandId: 'held-defer',
+              actorMemberId: 99,
+              reason: '',
+            },
+          },
+        };
+      if (isMock)
+        h.sqlite
+          .prepare(`INSERT INTO canonical_bid_session_state
+          (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at)
+          VALUES (?,8,?,'mock-c8',1,1)`)
+          .run(sessionId, JSON.stringify(state));
+      else {
+        state.lastSeq = 9;
+        h.sqlite
+          .prepare(
+            "UPDATE canonical_bid_session_state SET current_seq=9,last_command_id='presentation-fixture-c9',state_json=? WHERE bid_session_id=?",
+          )
+          .run(JSON.stringify(state), sessionId);
+      }
+      const before = h.sqlite
+        .prepare(
+          'SELECT state_json,current_seq,last_command_id FROM canonical_bid_session_state WHERE bid_session_id=?',
+        )
+        .get(sessionId);
+      const response = await app.fetch(
+        new Request(`http://x/api/presentation?bidSessionId=${sessionId}`, {
+          headers: { Authorization: `Bearer ${await token('member', 1)}` },
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        a_day: {
+          sequence: number;
+          groups: {
+            shift: string;
+            value: string;
+            used: number;
+            members: { member_id: number }[];
+          }[];
+          pending: { member_id: number; position_id: string }[];
+        };
+      };
+      const group = body.a_day.groups.find((entry) => entry.shift === 'A' && entry.value === 'G1');
+      expect(body.a_day.sequence).toBe(mode === 'HOLD' ? 7 : isMock ? 8 : 9);
+      expect(group?.used).toBe(mode === 'HOLD' ? 0 : 1);
+      expect(group?.members.map((member) => member.member_id)).toEqual(mode === 'HOLD' ? [] : [2]);
+      expect(body.a_day.pending).toEqual(
+        mode === 'HOLD'
+          ? [{ member_id: 1, name: 'First Bidder', rank: 'FF', position_id: 'A101', shift: 'A' }]
+          : [],
+      );
+      expect(JSON.stringify(body.a_day)).not.toMatch(
+        /PRIVATE-|actorMemberId|commandId|warningCodes|credential/,
+      );
+      expect(
+        h.sqlite
+          .prepare(
+            'SELECT state_json,current_seq,last_command_id FROM canonical_bid_session_state WHERE bid_session_id=?',
+          )
+          .get(sessionId),
+      ).toEqual(before);
+    },
+  );
+
   it.each([0, 1].flatMap((isMock) => [0, 2].map((queueCursor) => ({ isMock, queueCursor }))))(
     'keeps an early award with A-Day due on deck in both views (is_mock=$isMock, cursor=$queueCursor)',
     async ({ isMock, queueCursor }) => {
@@ -398,6 +497,81 @@ describe('annual live operator and presentation surfaces', () => {
         ],
       });
       deepStrictEqual(h.sqlite.serialize(), before);
+    },
+  );
+
+  it.each(['LIVE', 'HOLD'] as const)(
+    'projects only active open opportunities from the displayed %s checkpoint',
+    async (mode) => {
+      const row = h.sqlite
+        .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION) as { state_json: string };
+      const state = JSON.parse(row.state_json);
+      state.fills = {};
+      const frozen = await loadFrozenSessionBidPolicy(getDb(h.env.DB), SESSION);
+      if (!frozen.ok || frozen.snapshot.settings.v !== 3)
+        throw new Error('Synthetic frozen policy missing');
+      const order = computeFrozenStageOrder(frozen.snapshot, frozen.snapshot.settings.livePolicy);
+      if (!order.ok) throw new Error(order.code);
+      state.bidOrder = order.entries.map((entry) => ({ ...entry, pool: 'FF' }));
+      state.queueCursor = 0;
+      state.live.withdrawnPositionIds = ['A101'];
+      state.live.presentation.mode = mode;
+      state.live.presentation.heldProjection.fills = {};
+      state.live.presentation.heldProjection.withdrawnPositionIds = [];
+      state.live.presentation.heldProjection.completedStageIds = [];
+      state.lastSeq = 9;
+      h.sqlite
+        .prepare(
+          "UPDATE canonical_bid_session_state SET current_seq=9,last_command_id='withdrawal-fixture-c9',state_json=? WHERE bid_session_id=?",
+        )
+        .run(JSON.stringify(state), SESSION);
+      const before = h.sqlite
+        .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION);
+      const response = await app.fetch(
+        new Request(`http://x/api/presentation?bidSessionId=${SESSION}`, {
+          headers: { Authorization: `Bearer ${await token('member', 1)}` },
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        positions: { id: string }[];
+        progress: { filled: number; total: number };
+      };
+      expect(body.positions.map((position) => position.id)).toEqual(
+        mode === 'LIVE' ? [] : ['A101'],
+      );
+      expect(body.progress).toEqual({ filled: 0, total: mode === 'LIVE' ? 0 : 1 });
+      const eligible = await app.fetch(
+        new Request(`http://x/api/me/eligibility?bidSessionId=${SESSION}`, {
+          headers: { Authorization: `Bearer ${await token('member', 1)}` },
+        }),
+        { ...h.env, JWT_SIGNING_KEY: KEY },
+      );
+      expect(eligible.status).toBe(200);
+      expect(await eligible.json()).toMatchObject({ positions: [] });
+      const board = await app.fetch(
+        new Request(`http://x/api/board?bidSessionId=${SESSION}`, {
+          headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+        }),
+        {
+          ...h.env,
+          JWT_SIGNING_KEY: KEY,
+          BID_SESSION: {
+            idFromName: (name: string) => ({ toString: () => name }),
+            get: () => ({ fetch: async () => Response.json({}) }),
+          } as unknown as WorkerEnv['BID_SESSION'],
+        },
+      );
+      expect(board.status).toBe(200);
+      expect(await board.json()).toMatchObject({ positions: [] });
+      expect(
+        h.sqlite
+          .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+          .get(SESSION),
+      ).toEqual(before);
     },
   );
 

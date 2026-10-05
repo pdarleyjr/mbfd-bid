@@ -1,5 +1,6 @@
 import type { FrozenLiveBidPolicy } from '@mbfd/shared';
 import type { BidSessionState } from '../durable/bid-session-state.js';
+import { liveTurnIsCompleted } from './live-bid-opportunities.js';
 
 /** Queue progress remains authoritative after exhaustion; persisted live
  * metadata can still name the stage where the ordinary queue began. */
@@ -18,8 +19,13 @@ export function liveBidSelectionStages(state: BidSessionState, policy: FrozenLiv
   if (!current) return [];
   const returningMemberId = state.annual?.returningMemberId;
   return returningMemberId == null
-    ? [current]
+    ? liveTurnIsCompleted(state, { stageId: current.id })
+      ? []
+      : [current]
     : policy.stages.filter(
-        (stage) => stage.memberIds.includes(returningMemberId) && stage.order <= current.order,
+        (stage) =>
+          stage.memberIds.includes(returningMemberId) &&
+          stage.order <= current.order &&
+          !liveTurnIsCompleted(state, { stageId: stage.id }),
       );
 }

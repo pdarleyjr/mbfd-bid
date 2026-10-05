@@ -235,6 +235,20 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.transition_stage'),
     stageId: z.string().min(1),
+    adminOverride: AdminBidOverrideSchema.optional(),
+    completePriorStages: z.boolean().optional(),
+    withdrawOpenPositionIds: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .max(2_000)
+      .refine((ids) => new Set(ids).size === ids.length, 'Position IDs must be unique')
+      .optional(),
+    restoreOpenPositionIds: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .max(2_000)
+      .refine((ids) => new Set(ids).size === ids.length, 'Position IDs must be unique')
+      .optional(),
   }).strict(),
   LiveCommandBase.extend({
     type: z.literal('live.alter_order'),

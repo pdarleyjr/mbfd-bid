@@ -116,7 +116,15 @@ export function BidOperatorWorkspace({
   const specialtyGroups =
     specialtyRoster?.availability === 'AVAILABLE' ? specialtyRoster.groups : [];
   const specialtyGroup =
-    specialtyGroups.find((group) => group.id === specialtyId) ?? specialtyGroups[0];
+    specialtyGroups.find((group) => group.id === specialtyId) ??
+    specialtyGroups.find(
+      (group) =>
+        group.remainingSeatCount !== null &&
+        group.remainingSeatCount > 0 &&
+        group.eligibleMemberCount > 0,
+    ) ??
+    specialtyGroups.find((group) => group.eligibleMemberCount > 0) ??
+    specialtyGroups[0];
   const coverageWarnings = specialtyCoverageWarnings(specialtyRoster);
   const rosterSession = useRef(sessionId);
   useEffect(() => {
@@ -187,7 +195,11 @@ export function BidOperatorWorkspace({
             </span>
             {specialty ? (
               <span className="block text-xs text-muted-foreground">
-                {specialty.points === null ? 'Qualified pool' : `${specialty.points} points`}
+                {specialtyGroup?.certificateInventory
+                  ? 'Operations certificates'
+                  : specialty.points === null
+                    ? 'Qualified pool'
+                    : `${specialty.points} points`}
                 {specialty.priority === null && specialty.points !== null
                   ? ' · Order unavailable'
                   : ''}
@@ -320,19 +332,30 @@ export function BidOperatorWorkspace({
               >
                 <option value="remaining">Remaining</option>
                 <option value="taken">Already bid</option>
-                <option value="all">All qualified</option>
+                <option value="all">
+                  {specialtyGroup?.certificateInventory
+                    ? 'All certificate holders'
+                    : 'All qualified'}
+                </option>
               </NativeSelect>
               <p className="text-xs text-muted-foreground" aria-live="polite">
                 {specialtyGroup
-                  ? specialtyGroup.rankingCode
-                    ? 'Priority unavailable. Your adjustments remain available.'
-                    : `${specialtyGroup.rankingAvailable ? 'Priority order' : 'Qualified pool'} · ${specialtyGroup.eligibleMemberCount} remaining${specialtyGroup.remainingSeatCount === null ? '' : ` / ${specialtyGroup.remainingSeatCount} open seats`}`
+                  ? specialtyGroup.certificateInventory
+                    ? `Certificate inventory · ${specialtyGroup.eligibleMemberCount} remaining`
+                    : specialtyGroup.rankingCode
+                      ? 'Priority unavailable. Your adjustments remain available.'
+                      : `${specialtyGroup.rankingAvailable ? 'Priority order' : 'Qualified pool'} · ${specialtyGroup.eligibleMemberCount} remaining${specialtyGroup.remainingSeatCount === null ? '' : ` / ${specialtyGroup.remainingSeatCount} open seats`}`
                   : specialtyRoster === null
                     ? 'Specialty lists are updating.'
                     : specialtyRoster.availability === 'UNAVAILABLE'
                       ? 'Specialty lists could not be checked.'
                       : 'No configured specialty lists.'}
               </p>
+              {specialtyGroup?.certificateInventory ? (
+                <p className="text-xs text-muted-foreground">
+                  Six Operations certificates on record. Eligibility is checked on selection.
+                </p>
+              ) : null}
             </>
           ) : null}
         </header>

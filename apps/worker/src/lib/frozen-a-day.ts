@@ -18,6 +18,7 @@ import type { BidSessionState } from '../durable/bid-session-state.js';
 import { type AdminBidOverrideWarning, addAdminBidOverrideWarning } from './admin-bid-override.js';
 import { evaluateMembershipDistributions } from './bid-membership-distribution.js';
 import { eligibilityMemberFromFrozen } from './bid-policy.js';
+import { liveMemberHasOpenTurn } from './live-bid-opportunities.js';
 
 type FrozenADayEvaluation =
   | {
@@ -180,7 +181,12 @@ export function evaluateFrozenADays(
     phase1Picks,
     members,
     preSeededMemberIds: simultaneousPicks.map((pick) => pick.memberId),
-  });
+  }).filter(
+    (memberId) =>
+      liveMemberHasOpenTurn(state, memberId) ||
+      input.adminOverrideMemberId === memberId ||
+      state.aDay?.picks.some((pick) => pick.memberId === memberId),
+  );
   let engine: ADayState = initADayState({
     members,
     phase1Picks,
@@ -320,7 +326,10 @@ export function evaluateFrozenADays(
   return {
     ok: true,
     aDay: dehydrateADayState(engine),
-    hasDeferredSelections: deferredMemberIds.size > 0,
+    hasDeferredSelections: [...deferredMemberIds].some(
+      (memberId) =>
+        liveMemberHasOpenTurn(state, memberId) || input.adminOverrideMemberId === memberId,
+    ),
     nextDeferredMemberId,
     overrideWarnings,
   };

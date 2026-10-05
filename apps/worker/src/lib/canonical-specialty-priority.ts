@@ -3,6 +3,7 @@ import type { BidSessionPolicySnapshot, FrozenLiveBidPolicy } from '@mbfd/shared
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { rankFrozenSpecialtyCandidates } from './annual-specialty-policy.js';
 import { eligibilityMemberFromFrozen, frozenEligibilityMemberForSession } from './bid-policy.js';
+import { liveMemberHasOpenTurn, withdrawnLivePositionIds } from './live-bid-opportunities.js';
 
 /** A specialty's pool contains only members eligible for one of its captured
  * seats. Rank-specific ordinal requirements never apply to unrelated or
@@ -39,11 +40,16 @@ export function endedLiveSelectionRights(
     policy.dispositions.map((rule) => [rule.disposition, rule]),
   );
   return new Set(
-    [...latest].flatMap(([memberId, disposition]) => {
-      if (state.annual?.returningMemberId === memberId) return [];
-      const rule = rules.get(disposition);
-      return rule?.terminal ? [memberId] : [];
-    }),
+    [...new Set([...latest.keys(), ...state.bidOrder.map((turn) => turn.memberId)])].flatMap(
+      (memberId) => {
+        if (!liveMemberHasOpenTurn(state, memberId)) return [memberId];
+        if (state.annual?.returningMemberId === memberId) return [];
+        const disposition = latest.get(memberId);
+        if (disposition === undefined) return [];
+        const rule = rules.get(disposition);
+        return rule?.terminal ? [memberId] : [];
+      },
+    ),
   );
 }
 
@@ -59,6 +65,7 @@ export function unresolvedSpecialtyPriority(input: {
   requestContext?: { specialtyId: string; positionId: string; requesterMemberId: number };
 }): { specialtyId: string; candidateMemberIds: number[] }[] {
   if (input.snapshot.settings.v !== 3) throw new Error('LIVE_POLICY_MISMATCH');
+  if (withdrawnLivePositionIds(input.state).has(input.positionId)) return [];
   const policies = (input.snapshot.settings.livePolicy.annualOperations?.specialties ?? []).filter(
     (policy) =>
       policy.mode === 'INTERRUPTING' && policy.opportunityPositionIds.includes(input.positionId),
