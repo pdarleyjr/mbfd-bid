@@ -63,7 +63,7 @@ describe('persistent Real Bid access', () => {
       const link = host.querySelector('a');
       expect(link?.textContent).toBe('Open Real Bid');
       expect(link?.getAttribute('href')).toBe('/admin/bid?session_id=real%20%2F%20prepared');
-      expect(host.textContent).toContain('Ready to start');
+      expect(host.textContent).toContain('Saved session');
       expect(host.textContent).not.toContain('Prepare Real Bid');
       expect(prepare).not.toHaveBeenCalled();
       expect(fetcher).toHaveBeenCalledTimes(1);
@@ -73,18 +73,18 @@ describe('persistent Real Bid access', () => {
     },
   );
 
-  it.each([
-    ['paused', 'Paused · progress saved'],
-    ['position_bid', 'In progress'],
-  ])('opens %s without issuing a Start or Resume', async (phase, label) => {
-    fetcher.mockResolvedValue(listing([run('existing-real', false, phase)]));
-    await mount();
-    expect(host.querySelector('a')?.getAttribute('href')).toBe(
-      '/admin/bid?session_id=existing-real',
-    );
-    expect(host.textContent).toContain(label);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
+  it.each(['paused', 'position_bid'])(
+    'opens %s without inferring canonical status or issuing a Start or Resume',
+    async (phase) => {
+      fetcher.mockResolvedValue(listing([run('existing-real', false, phase)]));
+      await mount();
+      expect(host.querySelector('a')?.getAttribute('href')).toBe(
+        '/admin/bid?session_id=existing-real',
+      );
+      expect(host.textContent).toContain('Saved session');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('shows creation only when no open Real exists, retaining the normal callback', async () => {
     fetcher.mockResolvedValue(listing([run('mock', true, 'config'), run('past', 0, 'complete')]));

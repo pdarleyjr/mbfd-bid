@@ -52,7 +52,14 @@ vi.mock('../../app/admin/current-bid/BidImpactReview', () => ({
 }));
 
 vi.mock('../../app/admin/current-bid/BidOperations', () => ({
-  BidOperations: () => <p>Bid tasks</p>,
+  BidOperations: ({ createdRealId }: { createdRealId?: string | null }) => (
+    <div>
+      <p>Bid tasks</p>
+      {createdRealId && (
+        <a href={`/admin/bid?session_id=${encodeURIComponent(createdRealId)}`}>Open Real Bid</a>
+      )}
+    </div>
+  ),
 }));
 
 import { CurrentBidWorkspace } from '../../app/admin/current-bid/CurrentBidWorkspace';
@@ -966,7 +973,7 @@ describe('Current Bid managed Live workflow', () => {
       expect(writes()).toHaveLength(1);
       expect(writes()[0]?.key).toMatch(/^[0-9a-f-]{36}$/i);
       expect(stored()?.pending).toBeNull();
-      expect(container.textContent).toContain('Real session created; ready to start.');
+      expect(container.textContent).toContain('Real session created.');
       expect(
         container.querySelector('a[href="/admin/bid?session_id=synthetic-live-session"]')
           ?.textContent,
@@ -1025,7 +1032,7 @@ describe('Current Bid managed Live workflow', () => {
       expect(writes().map((request) => request.body)).toStrictEqual([mockBody(), mockBody(fresh)]);
       expect(writes()[1]?.key).not.toBe(writes()[0]?.key);
       expect(stored()?.pending).toBeNull();
-      expect(container.textContent).toContain('Real session created; ready to start.');
+      expect(container.textContent).toContain('Real session created.');
     },
   );
 
@@ -1060,7 +1067,7 @@ describe('Current Bid managed Live workflow', () => {
     expect(requests.filter((request) => request.path === 'preview')).toHaveLength(1);
     expect(stored()?.pending).toBeNull();
     expect(stored()?.base.version?.versionNumber).toBe(3);
-    expect(container.textContent).toContain('Real session created; ready to start.');
+    expect(container.textContent).toContain('Real session created.');
   });
 
   it.each(['mock', 'foreign-context'] as const)(

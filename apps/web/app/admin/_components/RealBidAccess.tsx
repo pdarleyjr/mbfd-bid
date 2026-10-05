@@ -96,14 +96,7 @@ export function RealBidAccess({
         </Link>
       ))}
       <span className="text-sm text-muted-foreground">
-        {year} ·{' '}
-        {real.length > 1
-          ? 'Choose an existing session'
-          : real[0]?.currentPhase === 'config'
-            ? 'Ready to start'
-            : real[0]?.currentPhase === 'paused'
-              ? 'Paused · progress saved'
-              : 'In progress'}
+        {year} · {real.length > 1 ? 'Choose an existing session' : 'Saved session'}
       </span>
     </div>
   );
