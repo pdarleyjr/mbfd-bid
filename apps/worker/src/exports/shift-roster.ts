@@ -8,6 +8,7 @@ import { bidSessions, bids } from '../db/schema.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { loadFrozenSessionBidPolicy } from '../lib/bid-policy.js';
 import type { CurrentStaffingReceipt } from '../lib/current-staffing-source.js';
+import { projectFrozenNonBidAssignments } from '../lib/frozen-nonbid-assignments.js';
 
 export const EXPORT_SHIFTS = ['A', 'B', 'C', 'D'] as const;
 export type ExportShift = (typeof EXPORT_SHIFTS)[number];
@@ -118,6 +119,7 @@ export function buildShiftRoster(input: {
   currentStaffing?: CurrentStaffingReceipt | null;
 }): ShiftRoster {
   const { snapshot, state } = input;
+  const fixedAssignments = projectFrozenNonBidAssignments(snapshot);
   const positions = new Map(snapshot.ruleBookMaterial.positions.map((p) => [p.id, p]));
   const members = new Map(snapshot.members.map((m) => [m.memberId, m]));
   const identities = new Map(
@@ -261,10 +263,13 @@ export function buildShiftRoster(input: {
         // A canonical temporary duty takes precedence over the current directory
         // occupant for that nonbiddable seat. Never overlay a biddable award.
         const chief = !award && !duties.get(position.id)?.length ? chiefs.get(position.id) : null;
+        const fixed =
+          !award && !duties.get(position.id)?.length ? fixedAssignments.get(position.id) : null;
+        const assignedMemberId = fixed?.memberId ?? chief?.memberId ?? null;
         const member = award
           ? members.get(award.memberId)
-          : chief
-            ? members.get(chief.memberId)
+          : assignedMemberId !== null
+            ? members.get(assignedMemberId)
             : null;
         const status = award
           ? 'Selected'
@@ -281,7 +286,11 @@ export function buildShiftRoster(input: {
           ...(position.division !== undefined ? { division: position.division } : {}),
           ...(position.isFloating !== undefined ? { isFloating: position.isFloating } : {}),
           isExcludedFromCount: position.isExcludedFromCount,
-          member: award ? memberLabel(award.memberId) : chief ? memberLabel(chief.memberId) : null,
+          member: award
+            ? memberLabel(award.memberId)
+            : assignedMemberId !== null
+              ? memberLabel(assignedMemberId)
+              : null,
           memberRank: member?.rank ?? null,
           aDay: award
             ? award.aDay === null
@@ -289,17 +298,17 @@ export function buildShiftRoster(input: {
                 ? 'Deferred'
                 : 'Not selected'
               : aDayLabel(award.aDay)
-            : chief?.aDay
+            : chief?.aDay && (!fixed || fixed.memberId === chief.memberId)
               ? aDayLabel(chief.aDay)
               : null,
           status,
           markers: [
-            ...(chief ? ['Admin assigned'] : []),
+            ...(fixed || chief ? ['Admin assigned'] : []),
             ...(award?.forced ? ['Forced'] : []),
             ...(award?.aDayOverride ? ['A-Day override'] : []),
           ],
           temporaryDuties: duties.get(position.id) ?? [],
-          ...(chief ? { administrativeAssignment: true } : {}),
+          ...(fixed || chief ? { administrativeAssignment: true } : {}),
         };
         stationMap.set(position.station, [...(stationMap.get(position.station) ?? []), row]);
       }

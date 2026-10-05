@@ -34,6 +34,7 @@ import {
 } from '../lib/current-staffing-source.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
+import { projectFrozenNonBidAssignments } from '../lib/frozen-nonbid-assignments.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
@@ -219,6 +220,14 @@ bid.get('/presentation', async (c) => {
           biddablePositionIds.has(position.id),
         )
       : [];
+  const fixedAssignments =
+    frozen.snapshot.v === 3 ? projectFrozenNonBidAssignments(frozen.snapshot) : new Map();
+  const displayedPositions =
+    frozen.snapshot.v === 3
+      ? frozen.snapshot.ruleBookMaterial.positions.filter(
+          (position) => biddablePositionIds.has(position.id) || fixedAssignments.has(position.id),
+        )
+      : [];
   const specialtyPolicy =
     frozen.snapshot.settings.v === 3 && specialtyState !== null
       ? frozen.snapshot.settings.livePolicy.annualOperations?.specialties?.find(
@@ -333,7 +342,7 @@ bid.get('/presentation', async (c) => {
     paused: currentPhase === 'paused',
     complete: currentPhase === 'complete',
     progress: { filled: Object.keys(fills).length, total: positions.length },
-    positions: positions.map((position) => ({
+    positions: displayedPositions.map((position) => ({
       id: position.id,
       shift: position.shift,
       station: position.station,
@@ -341,7 +350,10 @@ bid.get('/presentation', async (c) => {
       position_name: position.positionName,
       rank_required: position.rankRequired,
       forced: fills[position.id]?.forced !== undefined,
-      filled_by: safeMember(fills[position.id]?.memberId ?? null),
+      filled_by: safeMember(
+        fills[position.id]?.memberId ?? fixedAssignments.get(position.id)?.memberId ?? null,
+      ),
+      ...(fixedAssignments.has(position.id) ? { assigned: true } : {}),
     })),
     exceptional_assignments: (held
       ? (held.exceptionalAssignments ?? [])
@@ -891,6 +903,7 @@ bid.get('/board', async (c) => {
         })
       : undefined;
 
+  const readOnlyAssignments = projectFrozenNonBidAssignments(frozenBoardPolicy.snapshot);
   return c.json({
     ...body,
     isMock,
@@ -903,7 +916,10 @@ bid.get('/board', async (c) => {
     currentBidder,
     onDeck,
     members,
-    positions: frozenBoardPolicy.snapshot.ruleBookMaterial.positions,
+    positions: frozenBoardPolicy.snapshot.ruleBookMaterial.positions.map((position) => {
+      const assignment = readOnlyAssignments.get(position.id);
+      return { ...position, ...(assignment ? { readOnlyAssignment: assignment } : {}) };
+    }),
     advisory,
   });
 });

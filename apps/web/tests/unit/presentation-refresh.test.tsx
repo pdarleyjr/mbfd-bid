@@ -49,6 +49,40 @@ afterEach(async () => {
 });
 
 describe('Department presentation refresh', () => {
+  it('renders a retained assigned occupant without increasing Bid selections or progress', async () => {
+    const view = projection(10, 'Synthetic Captain');
+    view.progress = { filled: 0, total: 1 };
+    view.positions = [
+      {
+        id: 'A101',
+        shift: 'A',
+        station: 'Station #1',
+        unit: 'Combat 1',
+        position_name: 'Captain',
+        rank_required: 'CPT',
+        filled_by: null,
+      },
+      {
+        id: 'A211',
+        shift: 'A',
+        station: 'Station #2',
+        unit: '300',
+        position_name: 'Division Chief',
+        rank_required: 'DC',
+        filled_by: { member_id: 20, name: 'Retained Chief', rank: 'DC' },
+        assigned: true,
+      },
+    ];
+    await act(async () => root.render(<PresentationView initial={view} key="assigned-chief" />));
+    const fixed = container.querySelector('[data-position-id="A211"]');
+    expect(fixed?.textContent).toContain('Retained Chief');
+    expect(fixed?.textContent).toContain('Assigned');
+    expect(fixed?.textContent).not.toContain('Forced');
+    expect(container.textContent).toContain('0 / 1');
+    expect(container.textContent).toContain('1 available · 0 taken');
+    expect(fixed?.querySelector('button,a,input')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it.each([true, false])(
     'shows reviewed current-seat names without its opaque staffing ID (Mock %s)',
     async (isMock) => {

@@ -45,6 +45,8 @@ let commands: Record<string, unknown>[];
 let failCommand: boolean;
 let rejectCommandCode: string | null;
 let live: ReturnType<typeof state>;
+let liveReadback: (() => Promise<Response>) | null;
+let readbackCount: number;
 function fallback(mode: 'VOLUNTARY' | 'FORCED' = 'VOLUNTARY') {
   return {
     ok: true as const,
@@ -214,9 +216,14 @@ beforeEach(() => {
   failCommand = false;
   rejectCommandCode = null;
   live = state();
+  liveReadback = null;
+  readbackCount = 0;
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith('/specialty-live')) return response(live);
+    if (url.endsWith('/specialty-live')) {
+      readbackCount += 1;
+      return liveReadback ? liveReadback() : response(live);
+    }
     if (url === '/api/auth/csrf')
       return response({ token: 'csrf_00000000-0000-0000-0000-000000000001' });
     if (url.endsWith('/commands/live')) {
@@ -227,7 +234,8 @@ beforeEach(() => {
           status: 409,
           headers: { 'Content-Type': 'application/json' },
         });
-      return response({ kind: 'accepted' });
+      live.sequence += 1;
+      return response({ kind: 'accepted', seq: live.sequence });
     }
     throw new Error(`Unexpected request ${url}`);
   });
@@ -237,6 +245,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   window.fetch = originalWindowFetch;
@@ -324,6 +333,45 @@ async function mount(panel: string, positionList = positions) {
 }
 
 describe('simultaneous A-Day live awards', () => {
+  it('keeps an accepted selection blocked while a pre-save poll and one fresh read catch up', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await mount('Record selection');
+    const beforeSave = response(live);
+    let finishPoll: ((value: Response) => void) | undefined;
+    let finishFreshRead: ((value: Response) => void) | undefined;
+    let read = 0;
+    liveReadback = () =>
+      new Promise<Response>((resolve) => {
+        read += 1;
+        if (read === 1) finishPoll = resolve;
+        else finishFreshRead = resolve;
+      });
+    await act(async () => {
+      vi.advanceTimersByTime(2500);
+      await Promise.resolve();
+    });
+    await choose('Position selected by current bidder', 'abc');
+    await choose('Selection A-Day', 'G2');
+    await settle(() => button('Commit selection').click());
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({
+      expectedSeq: 4,
+      expectedScoreReceiptSha256: 'c'.repeat(64),
+    });
+    expect(readbackCount).toBe(2);
+    expect(button('Commit selection').disabled).toBe(true);
+    await settle(() => finishPoll?.(beforeSave));
+    expect(readbackCount).toBe(3);
+    expect(button('Commit selection').disabled).toBe(true);
+    await settle(() => button('Commit selection').click());
+    expect(commands).toHaveLength(1);
+    await settle(() => finishFreshRead?.(response(live)));
+    expect(container.textContent).toContain('Action recorded.');
+    expect(container.textContent).not.toContain('Refresh bid updates');
+    expect(readbackCount).toBe(3);
+    expect(commands).toHaveLength(1);
+  });
+
   it('offers an audited stage transition only when every stage opportunity is filled', async () => {
     live.selection_stage = {
       id: 'days-stage',

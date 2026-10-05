@@ -478,6 +478,11 @@ export function AnnualLiveControls(props: Props) {
     expectedScoreReceiptSha256: string | null;
   } | null>(null);
   const lastLoadedSequence = useRef<number | null>(null);
+  const loadInFlight = useRef<{
+    sessionId: string;
+    promise: Promise<number>;
+    notification: { parentNotified: boolean };
+  } | null>(null);
   const [reason, setReason] = useState('');
   const [evidenceReference, setEvidenceReference] = useState('');
   const [specialtyId, setSpecialtyId] = useState('');
@@ -931,34 +936,74 @@ export function AnnualLiveControls(props: Props) {
   });
   const [orderQuery, setOrderQuery] = useState('');
 
-  const load = useCallback(async () => {
-    const response = await fetch(
-      `/api/admin/bid-session/${encodeURIComponent(props.bidSessionId)}/specialty-live`,
-      { cache: 'no-store' },
-    );
-    const body = (await response.json().catch(() => null)) as
-      | SpecialtyState
-      | { error?: string }
-      | null;
-    if (!response.ok)
-      throw new Error(
-        body && 'error' in body ? body.error : `Live controls returned ${response.status}.`,
-      );
-    const next = body as SpecialtyState;
-    if (lastLoadedSequence.current !== null && next.sequence < lastLoadedSequence.current)
-      return lastLoadedSequence.current;
-    if (lastLoadedSequence.current !== null && next.sequence > lastLoadedSequence.current)
-      props.onCanonicalChange?.();
-    lastLoadedSequence.current = next.sequence;
-    if (orderSequence.current !== next.sequence) {
-      orderSequence.current = next.sequence;
-      setOrder(remainingOrderEntries(next.remaining_turns ?? next.remaining_order));
-    }
-    setState(next);
-    setLoadedAt(Date.now());
-    setLoadError(null);
-    return next.sequence;
-  }, [props.bidSessionId, props.onCanonicalChange]);
+  const load = useCallback(
+    (minimumSequence?: number, refreshParentOnUnchanged = false) => {
+      const joinedExistingRead = loadInFlight.current?.sessionId === props.bidSessionId;
+      function read() {
+        const current = loadInFlight.current;
+        // Share unfinished reads only; settled requests never become a cache.
+        if (current?.sessionId === props.bidSessionId) return current;
+        const notification = { parentNotified: false };
+        const promise: Promise<number> = (async () => {
+          const response = await fetch(
+            `/api/admin/bid-session/${encodeURIComponent(props.bidSessionId)}/specialty-live`,
+            { cache: 'no-store' },
+          );
+          const body = (await response.json().catch(() => null)) as
+            | SpecialtyState
+            | { error?: string }
+            | null;
+          if (!response.ok)
+            throw new Error(
+              body && 'error' in body ? body.error : `Live controls returned ${response.status}.`,
+            );
+          const next = body as SpecialtyState;
+          if (lastLoadedSequence.current !== null && next.sequence < lastLoadedSequence.current)
+            return lastLoadedSequence.current;
+          if (lastLoadedSequence.current !== null && next.sequence > lastLoadedSequence.current) {
+            notification.parentNotified = true;
+            props.onCanonicalChange?.();
+          }
+          lastLoadedSequence.current = next.sequence;
+          if (orderSequence.current !== next.sequence) {
+            orderSequence.current = next.sequence;
+            setOrder(remainingOrderEntries(next.remaining_turns ?? next.remaining_order));
+          }
+          setState(next);
+          setLoadedAt(Date.now());
+          setLoadError(null);
+          return next.sequence;
+        })().finally(() => {
+          if (loadInFlight.current?.promise === promise) loadInFlight.current = null;
+        });
+        const request = { sessionId: props.bidSessionId, promise, notification };
+        loadInFlight.current = request;
+        return request;
+      }
+      const firstRead = read();
+      if (minimumSequence === undefined && !refreshParentOnUnchanged) return firstRead.promise;
+      return firstRead.promise.then(async (initialSequence) => {
+        let sequence = initialSequence;
+        let completedRead = firstRead;
+        if (joinedExistingRead && minimumSequence !== undefined && sequence < minimumSequence) {
+          // The joined poll may have started before the save. Verify it with one fresh read.
+          completedRead = read();
+          sequence = await completedRead.promise;
+        }
+        if (
+          minimumSequence !== undefined &&
+          (!Number.isSafeInteger(sequence) || sequence < minimumSequence)
+        )
+          throw new Error('The saved bid update has not arrived. Retry bid updates.');
+        if (refreshParentOnUnchanged && !completedRead.notification.parentNotified) {
+          completedRead.notification.parentNotified = true;
+          props.onCanonicalChange?.();
+        }
+        return sequence;
+      });
+    },
+    [props.bidSessionId, props.onCanonicalChange],
+  );
 
   useEffect(() => {
     const refresh = () =>
@@ -1153,6 +1198,7 @@ export function AnnualLiveControls(props: Props) {
         expectedSeq: state.sequence,
         expectedScoreReceiptSha256: state.scoreReceiptSha256 ?? null,
       };
+    const minimumAcceptedSequence = pendingCommand.current.expectedSeq + 1;
     try {
       const response = await csrfFetch(
         `/api/admin/bid-session/${encodeURIComponent(props.bidSessionId)}/commands/live`,
@@ -1173,12 +1219,17 @@ export function AnnualLiveControls(props: Props) {
       );
       const body = (await response.json().catch(() => null)) as {
         kind?: string;
+        seq?: number;
         code?: string;
         error?: string;
       } | null;
       if (body?.kind === 'rejected') pendingCommand.current = null;
       if (!response.ok || body?.kind !== 'accepted')
         throw new Error(commandErrorMessage(body, response.status));
+      const minimumSequence =
+        typeof body.seq === 'number' && Number.isSafeInteger(body.seq)
+          ? Math.max(minimumAcceptedSequence, body.seq)
+          : minimumAcceptedSequence;
       pendingCommand.current = null;
       if (awardsPosition) {
         setTermChoice({ identity: '', confirmed: false, evidence: '' });
@@ -1199,7 +1250,7 @@ export function AnnualLiveControls(props: Props) {
             : 'Action recorded.';
       setNotice(recordedNotice);
       try {
-        await load();
+        await load(minimumSequence, true);
         if (props.workspace && (type === 'live.record_selection' || type === 'live.record_a_day'))
           setPanel(null);
       } catch (error) {
@@ -1389,11 +1440,13 @@ export function AnnualLiveControls(props: Props) {
             defaultADayTiming={state.a_day_selection}
             termParticipation={state.term_participation}
             commandsBlocked={loadError !== null || authRefreshing || authReviewRequired || busy}
-            onCanonicalChange={() => {
-              void load().catch((error: unknown) =>
-                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.'),
-              );
-              props.onCanonicalChange?.();
+            onCanonicalChange={async (minimumSequence) => {
+              try {
+                await load(minimumSequence, true);
+              } catch (error) {
+                setLoadError(error instanceof Error ? error.message : 'Bid updates unavailable.');
+                throw error;
+              }
             }}
           />
         ) : null}
