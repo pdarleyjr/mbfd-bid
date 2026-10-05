@@ -760,6 +760,7 @@ export function CurrentBidWorkspace({
           year={year}
           content={draft.content}
           versionId={draft.base.version?.id ?? null}
+          createdRealId={createdLive?.id ?? null}
           createdMockId={
             createdMock && createdMock.bidDefinition.versionId === draft.base.version?.id
               ? createdMock.id

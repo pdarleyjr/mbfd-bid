@@ -3,7 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { BidOperations } from '../../app/admin/current-bid/BidOperations';
 
-vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { mock: null } }) }));
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: ({ queryKey }: { queryKey: string[] }) => ({
+    data: queryKey[0] === 'bid-open-real-runs' ? [] : { mock: null },
+  }),
+}));
 vi.mock('../../app/admin/targetsolutions/LatestCredentialSource', () => ({
   LatestCredentialSource: () => null,
 }));
