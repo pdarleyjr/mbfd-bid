@@ -1,7 +1,6 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { BidLaunchAction } from '../_components/BidLaunchAction';
@@ -331,15 +330,9 @@ export function BidLiveReview({
           </div>
         )}
       {createdLive && (
-        <p>
-          Real session created; ready to start.{' '}
-          <Link
-            href={`/admin/bid?session_id=${encodeURIComponent(createdLive.id)}` as Route}
-            className="underline"
-          >
-            Open Real Bid
-          </Link>
-        </p>
+        <output className="block">
+          Real session created. Use Open Real Bid above when you are ready to start.
+        </output>
       )}
     </FieldSection>
   );

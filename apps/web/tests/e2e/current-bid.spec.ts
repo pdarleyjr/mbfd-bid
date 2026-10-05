@@ -46,6 +46,37 @@ const opportunityRows = (page: Page) => opportunityList(page).locator('button[ar
 const historyRows = (page: Page) => workspace(page).getByRole('button', { name: /^Version \d+\b/ });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+test('returning to the Bid keeps the prepared Real directly accessible without setup or writes', async ({
+  page,
+}) => {
+  const state = await installCurrentBidFixtures(page);
+  await page.route(`**/api/admin/annual-plan/${BID_YEAR}`, (route) =>
+    route.fulfill({
+      json: {
+        plan: {
+          year: BID_YEAR,
+          sessions: [
+            { id: 'synthetic-newer-mock', isMock: 1, currentPhase: 'position_bid' },
+            { id: 'synthetic-prepared-real', isMock: 0, currentPhase: 'config' },
+          ],
+        },
+      },
+    }),
+  );
+  await openBid(page);
+  const open = workspace(page).getByRole('link', { name: 'Open Real Bid', exact: true });
+  await expect(open).toHaveCount(1);
+  await expect(open).toBeVisible();
+  await expect(open).toHaveAttribute('href', '/admin/bid?session_id=synthetic-prepared-real');
+  await expect(
+    workspace(page).getByRole('button', { name: 'Prepare Real Bid', exact: true }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(open).toBeVisible();
+  await expect(open).toHaveAttribute('href', '/admin/bid?session_id=synthetic-prepared-real');
+  assertNoWrites(state);
+});
+
 for (const mode of ['mock', 'live'] as const) {
   test(`saved ${mode} launch acknowledges source and credential advisories once`, async ({
     page,
