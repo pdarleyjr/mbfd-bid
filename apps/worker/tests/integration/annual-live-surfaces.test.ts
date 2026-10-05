@@ -10,6 +10,7 @@ import {
   currentStaffingArchiveHash,
 } from '../../src/lib/current-staffing-source.js';
 import { signJwt } from '../../src/lib/jwt.js';
+import { computeFrozenStageOrder } from '../../src/lib/live-bid-policy.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
@@ -795,6 +796,122 @@ describe('annual live operator and presentation surfaces', () => {
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(JSON.stringify(body)).not.toContain('contact_history');
     expect((body as { positions: { forced: boolean }[] }).positions[0]?.forced).toBe(false);
+  });
+
+  it('shows retained nonbiddable occupants in both read models without changing Bid progress or saved state', async () => {
+    const assignedSession = 'synthetic-retained-assigned-display';
+    const source = h.sqlite
+      .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
+      .get(SESSION) as { snapshot_json: string };
+    const snapshot = JSON.parse(source.snapshot_json);
+    const ids = ['A211', 'B211', 'C211', 'A801', 'D201', 'D301', 'D401', 'D402'];
+    ids.forEach((id, index) => {
+      const memberId = index + 10;
+      const rank = index < 3 ? 'DC' : index < 6 ? 'CPT' : 'LT';
+      snapshot.members.push({
+        ...snapshot.members[0],
+        memberId,
+        pool: 'EXCLUDED',
+        exclusionReason: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+        authoritativeAssignmentId: `retained-assignment-${memberId}`,
+        rank,
+        currentBidPositionIds: [id],
+      });
+      snapshot.operatorIdentityProjection.push({
+        memberId,
+        employeeId: `PRIVATE_FIXED_${memberId}`,
+        firstName: `Assigned ${index}`,
+        lastName: 'Member',
+        rank,
+      });
+      snapshot.ruleBookMaterial.positions.push({
+        ...snapshot.ruleBookMaterial.positions[0],
+        id,
+        shift: id[0],
+        bidParticipation: index < 4 ? 'ADMIN_ASSIGNED_NON_BIDDABLE' : 'RESERVED_NON_BIDDABLE',
+        rankRequired: rank,
+        positionName: index < 3 ? 'Division Chief' : 'Retained position',
+      });
+    });
+    snapshot.members[0].currentBidPositionIds = ['A101']; // Existing current staffing cannot create an award.
+    const parsedSnapshot = BidSessionPolicySnapshotSchema.parse(snapshot);
+    if (parsedSnapshot.v !== 3 || parsedSnapshot.settings.v !== 3)
+      throw new Error('Synthetic V3 required');
+    const order = computeFrozenStageOrder(parsedSnapshot, parsedSnapshot.settings.livePolicy);
+    if (!order.ok) throw new Error(order.code);
+    const stateRow = h.sqlite
+      .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+      .get(SESSION) as { state_json: string };
+    const canonical = JSON.parse(stateRow.state_json);
+    canonical.bidSessionId = assignedSession;
+    canonical.bidOrder = order.entries.map((entry) => ({ ...entry, pool: 'FF' }));
+    canonical.queueCursor = canonical.bidOrder.findIndex(
+      (entry: { memberId: number }) => entry.memberId === canonical.currentBidderId,
+    );
+    canonical.fills.A101.ordinal = canonical.bidOrder.find(
+      (entry: { memberId: number }) => entry.memberId === 2,
+    ).ordinal;
+    h.sqlite
+      .prepare(
+        "INSERT INTO bid_sessions (id,bid_year,started_at,current_phase,current_bidder_id,turn_timer_seconds,expected_duration_days,day_count,is_mock) VALUES (?,2027,1,'position_bid',2,180,2,0,0)",
+      )
+      .run(assignedSession);
+    h.sqlite
+      .prepare(
+        "INSERT INTO bid_session_policy_snapshots (bid_session_id,rule_book_version,position_template_version,rule_book_revision,snapshot_json,captured_at) VALUES (?,'2027.1','2027.1',1,?,1)",
+      )
+      .run(assignedSession, JSON.stringify(snapshot));
+    h.sqlite
+      .prepare(
+        "INSERT INTO canonical_bid_session_state (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at) VALUES (?,8,?,'c8',1,1)",
+      )
+      .run(assignedSession, JSON.stringify(canonical));
+    const before = h.sqlite.serialize();
+    const board = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${assignedSession}`, {
+        headers: { Authorization: `Bearer ${await token('admin', 99)}` },
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: {
+          idFromName: () => ({}),
+          get: () => ({ fetch: async () => Response.json({}) }),
+        } as unknown as WorkerEnv['BID_SESSION'],
+      },
+    );
+    expect(board.status, await board.clone().text()).toBe(200);
+    const boardBody = (await board.json()) as {
+      positions: Array<{ id: string; readOnlyAssignment?: { name: string } }>;
+      fills: Record<string, unknown>;
+    };
+    expect(boardBody.positions.filter((position) => position.readOnlyAssignment)).toHaveLength(8);
+    expect(
+      boardBody.positions.find((position) => position.id === 'A101')?.readOnlyAssignment,
+    ).toBeUndefined();
+    expect(Object.keys(boardBody.fills)).toEqual(['A101']);
+    const presentation = await app.fetch(
+      new Request(`http://x/api/presentation?bidSessionId=${assignedSession}`, {
+        headers: { Authorization: `Bearer ${await token('member', 1)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY },
+    );
+    expect(presentation.status).toBe(200);
+    const shown = (await presentation.json()) as {
+      progress: { filled: number; total: number };
+      positions: Array<{ assigned?: boolean; filled_by: { name: string } | null }>;
+    };
+    expect(shown.progress).toEqual({ filled: 0, total: 1 });
+    expect(
+      shown.positions.filter((position) => position.assigned && position.filled_by),
+    ).toHaveLength(8);
+    expect(
+      shown.positions
+        .filter((position) => position.assigned)
+        .map((position) => position.filled_by?.name),
+    ).toContain('Assigned 7 Member');
+    expect(JSON.stringify(shown)).not.toMatch(/PRIVATE_FIXED|employeeId|credential/);
+    deepStrictEqual(h.sqlite.serialize(), before);
   });
 
   it('shows current directory seat and A-Day in the member-safe presentation without changing bid state', async () => {

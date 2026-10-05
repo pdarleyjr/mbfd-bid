@@ -23,6 +23,7 @@ let root: Root | undefined;
 let container: HTMLDivElement;
 let originalWindowFetch: typeof fetch;
 let nextReadback: (() => Promise<Response>) | null;
+let readbackCount: number;
 let parentRefresh: ReturnType<typeof vi.fn<() => void>>;
 function response(sequence: number) {
   return new Response(
@@ -41,10 +42,12 @@ beforeEach(() => {
   originalWindowFetch = window.fetch;
   overrideProps = null;
   nextReadback = null;
+  readbackCount = 0;
   parentRefresh = vi.fn<() => void>();
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     if (!String(input).endsWith('/specialty-live'))
       throw new Error(`Unexpected request: ${String(input)}`);
+    readbackCount += 1;
     return nextReadback ? nextReadback() : response(4);
   });
   vi.stubGlobal('fetch', fetcher);
@@ -53,6 +56,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   window.fetch = originalWindowFetch;
   document.body.replaceChildren();
@@ -107,7 +111,72 @@ describe.each([false, true])(
       });
       expect(resolved).toBe(true);
       expect(overrideProps?.sequence).toBe(5);
-      expect(parentRefresh).toHaveBeenCalled();
+      expect(parentRefresh).toHaveBeenCalledOnce();
+    });
+
+    it('shares a slow poll and retries one fresh read when the accepted save needs a newer sequence', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      await mount(isMock);
+      let finishPoll: ((value: Response) => void) | undefined;
+      let finishFreshRead: ((value: Response) => void) | undefined;
+      let request = 0;
+      nextReadback = () =>
+        new Promise<Response>((resolve) => {
+          request += 1;
+          if (request === 1) finishPoll = resolve;
+          else finishFreshRead = resolve;
+        });
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+        await Promise.resolve();
+      });
+      expect(readbackCount).toBe(2);
+      await act(async () => {
+        vi.advanceTimersByTime(7500);
+        await Promise.resolve();
+      });
+      expect(readbackCount).toBe(2);
+      let resolved = false;
+      const refresh = overrideProps?.onCanonicalChange(5).then(() => {
+        resolved = true;
+      });
+      await settle();
+      expect(readbackCount).toBe(2);
+      await settle(() => finishPoll?.(response(4)));
+      expect(readbackCount).toBe(3);
+      expect(overrideProps?.sequence).toBe(4);
+      expect(resolved).toBe(false);
+      await act(async () => {
+        vi.advanceTimersByTime(7500);
+        await Promise.resolve();
+      });
+      expect(readbackCount).toBe(3);
+      await act(async () => {
+        finishFreshRead?.(response(5));
+        await refresh;
+      });
+      expect(resolved).toBe(true);
+      expect(overrideProps?.sequence).toBe(5);
+      expect(parentRefresh).toHaveBeenCalledOnce();
+
+      nextReadback = async () => response(4);
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+        await Promise.resolve();
+      });
+      await settle();
+      expect(readbackCount).toBe(4);
+      expect(overrideProps?.sequence).toBe(5);
+      expect(parentRefresh).toHaveBeenCalledOnce();
+    });
+
+    it('refreshes the parent once when an accepted replay is already at the loaded sequence', async () => {
+      await mount(isMock);
+      await act(async () => {
+        await overrideProps?.onCanonicalChange(4);
+      });
+      expect(overrideProps?.sequence).toBe(4);
+      expect(parentRefresh).toHaveBeenCalledOnce();
     });
 
     it('blocks further commands when readback fails without swallowing the refresh error', async () => {

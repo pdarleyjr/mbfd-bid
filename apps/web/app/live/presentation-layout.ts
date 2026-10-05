@@ -34,6 +34,8 @@ export type PresentationPosition = {
   rank_required: string;
   filled_by: PresentationMember | null;
   forced?: boolean;
+  /** Retained nonbiddable staffing, displayed without creating a Bid selection. */
+  assigned?: boolean;
 };
 
 export type PresentationChiefAssignment = PresentationMember & {

@@ -115,10 +115,12 @@ function PresentationBoard({ view }: { view: Presentation }) {
     (member) => member.member_id === view.current_bidder?.member_id,
   );
   const filled = (view.positions ?? []).filter(
-    (position) => position.shift.toUpperCase() === shift && position.filled_by,
+    (position) =>
+      position.shift.toUpperCase() === shift && position.filled_by && !position.assigned,
   ).length;
   const total = stations.reduce(
-    (count, station) => count + station.seats.filter((seat) => !seat.chief_directed).length,
+    (count, station) =>
+      count + station.seats.filter((seat) => !seat.chief_directed && !seat.assigned).length,
     0,
   );
 
@@ -298,7 +300,11 @@ function PresentationBoard({ view }: { view: Presentation }) {
                       </div>
                       <div className={styles.seatOccupant}>
                         <span>{position.filled_by?.name ?? 'Available'}</span>
-                        {position.forced ? <small className={styles.forced}>Forced</small> : null}
+                        {position.assigned ? (
+                          <small className={styles.forced}>Assigned</small>
+                        ) : position.forced ? (
+                          <small className={styles.forced}>Forced</small>
+                        ) : null}
                       </div>
                     </li>
                   ))}

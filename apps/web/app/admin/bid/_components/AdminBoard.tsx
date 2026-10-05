@@ -1,7 +1,7 @@
 'use client';
 import type { BidAdvisoryBundle } from '@mbfd/shared';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { StationGroupedGrid } from '../../../_components/bid/StationGroupedGrid';
 import type { MemberLite, PositionMeta, Shift } from '../../../_components/bid/types';
@@ -37,6 +37,10 @@ interface Props {
   onShiftChange?: ((shift: Shift) => void) | undefined;
 }
 
+type AssignedPosition = PositionMeta & {
+  readOnlyAssignment?: { memberId: number; name: string; rank: string };
+};
+
 export function AdminBoard({
   bidSessionId,
   initialSeq,
@@ -54,6 +58,8 @@ export function AdminBoard({
 }: Props) {
   const operator = useBidOperator();
   const router = useRouter();
+  const [localShift, setLocalShift] = useState<Shift>('A');
+  const visibleShift = selectedShift ?? localShift;
   const store = useMemo(() => {
     const s = createBidStore({ bidSessionId, initialSeq, meMemberId });
     s.setState({ fills: initialFills, currentBidderId: initialCurrentBidderId });
@@ -70,6 +76,13 @@ export function AdminBoard({
         (position) => !position.bidParticipation || position.bidParticipation === 'BIDDABLE',
       ),
     [positions],
+  );
+  const assignedPositions = (positions as readonly AssignedPosition[] | undefined)?.filter(
+    (position) =>
+      position.shift === visibleShift &&
+      position.bidParticipation !== undefined &&
+      position.bidParticipation !== 'BIDDABLE' &&
+      position.readOnlyAssignment,
   );
 
   // Position cells are interactive only when pick mode is on AND the admin
@@ -118,8 +131,11 @@ export function AdminBoard({
           snapshotBound
           onPositionClick={positionClickHandler}
           operatorLayout={workspace}
-          selectedShift={selectedShift}
-          onShiftChange={onShiftChange}
+          selectedShift={visibleShift}
+          onShiftChange={(shift) => {
+            setLocalShift(shift);
+            onShiftChange?.(shift);
+          }}
           toolbar={
             workspace ? (
               <details className="relative text-xs">
@@ -141,6 +157,28 @@ export function AdminBoard({
               : (members[String(operator.selectedMemberId)]?.rank ?? null)
           }
         />
+        {assignedPositions?.length ? (
+          <section
+            aria-label="Assigned positions"
+            className="grid shrink-0 gap-1 px-2 py-1 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            {assignedPositions.map((position) => (
+              <div
+                key={position.id}
+                data-testid={`assigned-position-${position.id}`}
+                className="min-w-0 rounded border border-border bg-muted/50 px-2 py-1 text-xs"
+              >
+                <p className="truncate" title={`${position.id} · ${position.positionName}`}>
+                  <strong>{position.id}</strong> · {position.positionName}
+                </p>
+                <p className="truncate font-semibold">
+                  {position.readOnlyAssignment?.name}
+                  <span className="ml-2 font-normal text-muted-foreground">Assigned</span>
+                </p>
+              </div>
+            ))}
+          </section>
+        ) : null}
         {status !== 'open' ? <ReconnectingOverlay status={status} /> : null}
         {lastError ? (
           <ErrorToast error={lastError} onClose={() => store.getState().clearError()} />
