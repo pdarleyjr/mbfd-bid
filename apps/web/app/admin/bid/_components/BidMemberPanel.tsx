@@ -349,7 +349,10 @@ export function BidMemberPanel({
                 ) : null}
               </>
             ))}
-            <SpecialtyReference reference={form.current?.data?.airTechReference} />
+            <SpecialtyReference
+              reference={form.current?.data?.airTechReference}
+              rankReferences={form.current?.data?.rankReferences}
+            />
           </TabsPrimitive.Panel>
           <TabsPrimitive.Panel value="form" className="outline-none">
             <BidMemberForm

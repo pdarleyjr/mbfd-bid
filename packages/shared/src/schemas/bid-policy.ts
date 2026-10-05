@@ -1027,7 +1027,37 @@ export type FrozenSpecialtyQualification = z.infer<typeof FrozenSpecialtyQualifi
  * separate from employee identity so a session snapshot can reproduce policy
  * decisions without persisting names or source-system identifiers.
  */
+/** Reviewed numeric ranking evidence. This cannot grant a qualification or
+ * change membership, a required criterion, rank or ordinary seniority. */
+export const FrozenScoreReferenceEvidenceSchema = z
+  .object({
+    v: z.literal(1),
+    listId: z
+      .string()
+      .trim()
+      .regex(/^[A-Z][A-Z0-9_]{0,79}$/),
+    positionIds: z.array(z.string().trim().min(1).max(160)).min(1).max(500),
+    points: z.number().finite().nonnegative().max(100000),
+    soPoints: z.number().finite().nonnegative().max(100000),
+    moPoints: z.number().finite().nonnegative().max(100000),
+    sourceName: z.string().trim().min(1).max(200),
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceLocation: z
+      .object({ page: z.number().int().positive(), textLine: z.number().int().positive() })
+      .strict(),
+    literalTotal: z.number().finite().nonnegative().nullable(),
+    printedBidOrder: z.number().int().positive().nullable(),
+    sourcePriority: z.number().int().safe().positive(),
+  })
+  .strict()
+  .refine((reference) => new Set(reference.positionIds).size === reference.positionIds.length, {
+    path: ['positionIds'],
+    message: 'Score reference positions must be unique',
+  });
+export type FrozenScoreReferenceEvidence = z.infer<typeof FrozenScoreReferenceEvidenceSchema>;
+
 export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend({
+  scoreReferenceEvidence: z.array(FrozenScoreReferenceEvidenceSchema).max(25).optional(),
   bidTourEvidence: z
     .object({
       recordId: z.string().min(1),
@@ -1077,6 +1107,18 @@ export const FrozenBidEligibilityMemberSchema = FrozenBidPoolMemberSchema.extend
 })
   .strict()
   .superRefine((member, context) => {
+    const referencedPositions = new Set<string>();
+    for (const [index, reference] of (member.scoreReferenceEvidence ?? []).entries()) {
+      for (const positionId of reference.positionIds) {
+        if (referencedPositions.has(positionId))
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['scoreReferenceEvidence', index, 'positionIds'],
+            message: 'A member position cannot have competing score references',
+          });
+        referencedPositions.add(positionId);
+      }
+    }
     if (member.rank === 'CIVILIAN' && member.pool !== 'EXCLUDED') {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1379,6 +1421,16 @@ const FrozenTenureEvidenceSchema = z
   })
   .strict();
 
+export const FrozenScoreReferenceSourceSchema = z
+  .object({
+    v: z.literal(1),
+    archiveSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    receiptSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceVersionId: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type FrozenScoreReferenceSource = z.infer<typeof FrozenScoreReferenceSourceSchema>;
+
 const BidSessionPolicySnapshotV3Schema = z
   .object({
     v: z.literal(3),
@@ -1398,6 +1450,7 @@ const BidSessionPolicySnapshotV3Schema = z
     staffingBaseline: FrozenStaffingBaselineSchema.optional(),
     capturedAtMs: z.number().int().nonnegative(),
     members: z.array(FrozenBidEligibilityMemberSchema),
+    scoreReferenceSource: FrozenScoreReferenceSourceSchema.optional(),
     tenureEvidence: z.array(FrozenTenureEvidenceSchema).optional(),
     /** Catalog identity is distinct from who holds a qualification. Old snapshots
      * retain their original reference validation when this evidence is absent. */
@@ -1419,6 +1472,7 @@ const BidEvaluationBaseSchema = BidSessionPolicySnapshotV3Schema.omit({
   ruleBookRevision: true,
   configurationRevision: true,
   annualPolicyEvidence: true,
+  scoreReferenceSource: true,
 });
 function refineBidPool(
   snapshot: { members: z.infer<typeof FrozenBidPoolMemberSchema>[] },

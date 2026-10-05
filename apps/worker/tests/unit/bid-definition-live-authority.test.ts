@@ -1,4 +1,9 @@
-import { BidDispositionSchema, FrozenLiveBidPolicySchema, LiveBidActionSchema } from '@mbfd/shared';
+import {
+  BidDispositionSchema,
+  BidSessionPolicySnapshotSchema,
+  FrozenLiveBidPolicySchema,
+  LiveBidActionSchema,
+} from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkerEnv } from '../../src/types/env.js';
 
@@ -78,11 +83,69 @@ function preparedSnapshot() {
   return {
     ok: true,
     snapshot: {
-      v: 3,
-      configurationRevision: 1,
-      settings: {
+      ...BidSessionPolicySnapshotSchema.parse({
         v: 3,
-        livePolicy: policyWithSeparatedAuthority(),
+        ruleBookVersion: 'synthetic-book',
+        ruleBookRevision: 1,
+        positionTemplateVersion: 'synthetic-template',
+        configurationRevision: 1,
+        capturedAtMs: 1,
+        credentialEvaluationOn: '2027-01-01',
+        members: [
+          {
+            memberId: LIVE_CREATOR,
+            pool: 'FF',
+            rank: 'FF',
+            rscSeniority: 1,
+            rankSeniority: 1,
+            exclusionReason: null,
+            authoritativeAssignmentId: null,
+            isProbationary: false,
+            credentialNames: [],
+          },
+        ],
+        settings: {
+          v: 3,
+          expectedDurationDays: 2,
+          turnTimerSeconds: 180,
+          credentialEvaluationOn: '2027-01-01',
+          personnelEvaluationOn: '2027-01-01',
+          livePolicy: policyWithSeparatedAuthority(),
+        },
+        ruleBookMaterial: {
+          v: 1,
+          rules: [
+            {
+              ruleBookVersion: 'synthetic-book',
+              positionId: 'synthetic-live-seat',
+              templateVersion: 'synthetic-template',
+              requiredCriteriaJson: '{"rank":["FF"],"credentials":[],"custom":[]}',
+              pointsPreferenceJson: '{"max":0,"items":[]}',
+              tieBreakChainJson: '["rsc_seniority"]',
+            },
+          ],
+          positions: [
+            {
+              id: 'synthetic-live-seat',
+              templateVersion: 'synthetic-template',
+              bidParticipation: 'BIDDABLE',
+              isExcludedFromCount: false,
+              shift: 'A',
+              station: '7',
+              unit: 'Synthetic Engine',
+              rankRequired: 'FF',
+              positionName: 'Synthetic firefighter',
+            },
+          ],
+        },
+      }),
+      bidDefinition: {
+        v: 1,
+        bidSessionId: 'synthetic-authority-preview',
+        bidYear: 2027,
+        versionId: 'synthetic-version',
+        versionSha256: 'c'.repeat(64),
+        contextSha256: CONTEXT_SHA256,
       },
     },
     coverage: { valid: true },

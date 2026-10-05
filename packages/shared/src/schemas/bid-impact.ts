@@ -10,6 +10,20 @@ const memberId = z.number().int().positive();
 const count = z.number().int().nonnegative();
 const number = z.number().finite();
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
+const TieBreakKey = z.enum(RULE_TIE_BREAK_KEYS);
+export const BidImpactComparisonStepSchema = z
+  .object({
+    key: z.union([TieBreakKey, z.literal('ordered_preference'), z.literal('source_priority')]),
+    criterion: z.string().optional(),
+    sourceRef: z.string().optional(),
+    listId: z.string().optional(),
+    sourceSha256: digest.optional(),
+    left: number,
+    right: number,
+    direction: z.enum(['HIGHER_FIRST', 'LOWER_FIRST']),
+    result: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+  })
+  .strict();
 const date = CredentialEvaluationDateSchema;
 const ids = z.array(id);
 const memberIds = z.array(memberId);
@@ -174,7 +188,6 @@ const Comparison = z.discriminatedUnion('status', [
     })
     .strict(),
 ]);
-const TieBreakKey = z.enum(RULE_TIE_BREAK_KEYS);
 const Item = z
   .object({ credential: z.string(), awarded: number, reason: z.string().optional() })
   .strict();
@@ -218,19 +231,7 @@ const TraceSide = z.discriminatedUnion('status', [
       comparison: z
         .object({
           result: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
-          steps: z.array(
-            z
-              .object({
-                key: z.union([TieBreakKey, z.literal('ordered_preference')]),
-                criterion: z.string().optional(),
-                sourceRef: z.string().optional(),
-                left: number,
-                right: number,
-                direction: z.enum(['HIGHER_FIRST', 'LOWER_FIRST']),
-                result: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
-              })
-              .strict(),
-          ),
+          steps: z.array(BidImpactComparisonStepSchema),
         })
         .strict()
         .nullable(),

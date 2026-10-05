@@ -193,6 +193,103 @@ describe('private documentary bid form archive', () => {
     expect(objects.has(`bid-forms/v1/revisions/2026/${newReceipt.sha256}.json`)).toBe(true);
     expect((await publish(changed, old.sha256)).status).toBe(200);
   });
+  it('reports only source counts and revision identity without database writes or private form fields', async () => {
+    const before = databaseHash();
+    const missing = await request('/2026/source');
+    expect(await missing.json()).toEqual({
+      year: 2026,
+      status: 'NONE',
+      archiveSha256: null,
+      publishedAt: null,
+      source: null,
+      submittedForms: 0,
+      notSubmitted: 0,
+      airTechReferences: 0,
+      rankLists: 0,
+      rankRows: 0,
+    });
+    const published = (await (await publish()).json()) as { sha256: string };
+    const response = await request('/2026/source');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    const body = await response.text();
+    expect(JSON.parse(body)).toMatchObject({
+      year: 2026,
+      status: 'PUBLISHED',
+      archiveSha256: published.sha256,
+      source: archive().source,
+      submittedForms: 1,
+      notSubmitted: 0,
+      rankLists: 0,
+      rankRows: 0,
+    });
+    for (const privateValue of [
+      'synthetic private contact',
+      'PRIVATE_EMPLOYEE_1',
+      'positionPreferences',
+      'publishedBy',
+    ])
+      expect(body).not.toContain(privateValue);
+    expect(databaseHash()).toBe(before);
+  });
+  it('requires admin authorization and intact source for publication metadata', async () => {
+    expect((await request('/2026/source', 'GET', undefined, 'invalid')).status).toBe(401);
+    expect((await request('/1999/source')).status).toBe(400);
+    expect((await request('/20260/source')).status).toBe(400);
+    await publish();
+    const current = JSON.parse(objects.get('bid-forms/v1/2026.json') ?? '') as BidFormReceipt;
+    firstForm(current.archive).phone1 = 'tampered synthetic private value';
+    objects.set('bid-forms/v1/2026.json', JSON.stringify(current));
+    const response = await request('/2026/source');
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'bid_form_archive_integrity_failed' });
+  });
+  it.each([true, false])(
+    'publishes generic lists for Mock=%s with exact frozen identity and no D1 writes',
+    async (isMock) => {
+      h.sqlite.prepare('UPDATE bid_sessions SET is_mock=?').run(isMock ? 1 : 0);
+      const before = databaseHash();
+      const saved = archive();
+      saved.rankLists = [
+        {
+          listId: 'FIRE_INVESTIGATOR',
+          title: 'Fire Investigator',
+          source: {
+            name: 'Synthetic investigator.pdf',
+            sha256: 'e'.repeat(64),
+            pages: 1,
+            generatedAt: [],
+          },
+          columns: ['total', 'preferences'],
+          columnLabels: { total: 'Total', preferences: 'Preferences' },
+          rows: [
+            {
+              employeeId: 'PRIVATE_EMPLOYEE_1',
+              sourceMemberName: 'Member & Saved,Frozen <Captain>',
+              sourceRank: 'Captain',
+              bidOrder: null,
+              values: { total: 2, preferences: '<script>source text only</script>' },
+              provenance: [{ page: 1, textLine: 3, bbox: [1, 2, 30, 40] }],
+            },
+          ],
+        },
+      ];
+      expect((await publish(saved)).status).toBe(201);
+      const projected = (await (await request()).json()) as MemberBidFormResponse;
+      expect(projected.rankReferences?.[0]).toMatchObject({
+        title: 'Fire Investigator',
+        source: { generatedAt: [] },
+        row: {
+          bidOrder: null,
+          values: { total: 2, preferences: '<script>source text only</script>' },
+        },
+      });
+      expect(projected).not.toHaveProperty('credentialNames');
+      expect(databaseHash()).toBe(before);
+      expect(
+        ((await (await request('/2026/members/1')).json()) as MemberBidFormResponse).rankReferences,
+      ).toEqual([]);
+    },
+  );
   it('failed concurrent current-pointer update preserves the previous published source', async () => {
     const old = (await (await publish()).json()) as { sha256: string };
     const headBefore = objects.get('bid-forms/v1/2026.json');

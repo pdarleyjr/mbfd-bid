@@ -27,6 +27,7 @@ export interface Member {
   credentials: Credential[];
   memberId?: number;
   scoringEvidence?: { evaluationOn: string; completedCredentialNames: string[] } | undefined;
+  scoreReferenceEvidence?: readonly ScoreReferenceEvidence[] | undefined;
   serviceCredits?: {
     serviceCode: string;
     verifiedMonths: number | null;
@@ -35,6 +36,27 @@ export interface Member {
     sourceRef: string;
     actorSubject: string;
   }[];
+}
+
+/** Numeric source ranking is independent of eligibility qualifications. */
+export interface ScoreReferenceEvidence {
+  v: 1;
+  listId: string;
+  positionIds: readonly string[];
+  points: number;
+  soPoints: number;
+  moPoints: number;
+  sourceName: string;
+  sourceSha256: string;
+  sourceLocation: { page: number; textLine: number };
+  literalTotal: number | null;
+  printedBidOrder: number | null;
+  sourcePriority: number;
+}
+export interface ScoreReferencePriority {
+  listId: string;
+  sourceSha256: string;
+  priority: number;
 }
 
 /**
@@ -158,6 +180,7 @@ export interface PointsBreakdown {
 }
 
 export interface EligibilityResult {
+  scoreReferencePriority?: ScoreReferencePriority | undefined;
   orderedPreference?: OrderedPreferenceResult | undefined;
   eligible: boolean;
   reasons: EligibilityReason[];

@@ -1,4 +1,5 @@
 import { type OrderedPreferenceStep, compareOrderedPreferences } from './ordered-preference.js';
+import { compareScoreReferencePriorities } from './score-reference.js';
 import type { EligibilityResult, Member, TieBreakKey } from './types.js';
 
 export interface ComparableResult extends EligibilityResult {
@@ -66,6 +67,15 @@ export type TieBreakStep =
       key: TieBreakKey;
       result: -1 | 0 | 1;
     })
+  | {
+      key: 'source_priority';
+      listId: string;
+      sourceSha256: string;
+      left: number;
+      right: number;
+      direction: 'LOWER_FIRST';
+      result: -1 | 1;
+    }
   | OrderedPreferenceStep;
 
 function compareUsingChain(
@@ -76,6 +86,23 @@ function compareUsingChain(
 ): -1 | 0 | 1 {
   if ([a, b].some((result) => missingBidOrdinalKeys(result, tieBreakChain).length > 0))
     throw new Error('BID_ORDINAL_EVIDENCE_MISSING');
+  const sourcePriority = compareScoreReferencePriorities(
+    a.scoreReferencePriority,
+    b.scoreReferencePriority,
+  );
+  if (sourcePriority !== null && a.scoreReferencePriority && b.scoreReferencePriority) {
+    const result = sourcePriority < 0 ? -1 : 1;
+    visit?.({
+      key: 'source_priority',
+      listId: a.scoreReferencePriority.listId,
+      sourceSha256: a.scoreReferencePriority.sourceSha256,
+      left: a.scoreReferencePriority.priority,
+      right: b.scoreReferencePriority.priority,
+      direction: 'LOWER_FIRST',
+      result,
+    });
+    return result;
+  }
   const ordered = compareOrderedPreferences(a.orderedPreference, b.orderedPreference, visit);
   if (ordered !== 0) return ordered;
   for (const key of tieBreakChain) {

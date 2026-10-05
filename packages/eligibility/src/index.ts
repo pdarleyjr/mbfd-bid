@@ -13,6 +13,8 @@ export type {
   TieBreakKey,
   CohortDecision,
   EligibilityCohortResult,
+  ScoreReferenceEvidence,
+  ScoreReferencePriority,
 } from './types.js';
 
 export {
@@ -39,6 +41,11 @@ export {
   type EligibilityChannels,
 } from './evaluate.js';
 export { configuredChannel } from './points/configured.js';
+export {
+  scoreReferenceForPositions,
+  referencePriority,
+  compareScoreReferencePriorities,
+} from './score-reference.js';
 export { evaluateOrderedPreference, compareOrderedPreferences } from './ordered-preference.js';
 export { evaluateEligibilityCohort } from './cohort.js';
 export type { OrderedPreferenceResult, OrderedQualificationPreference } from './types.js';

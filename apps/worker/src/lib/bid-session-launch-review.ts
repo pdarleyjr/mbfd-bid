@@ -29,7 +29,16 @@ export async function readBidSessionLaunchReview(
     'bidDefinition' in snapshot
       ? BidDefinitionSnapshotPinSchema.parse(snapshot.bidDefinition)
       : undefined;
-  const stored = await loadStoredBidLaunchReview(database, sessionId, context);
+  let stored = await loadStoredBidLaunchReview(database, sessionId, context);
+  // A pre-start scoring receipt changes the launch digest without changing
+  // its base creation receipt. The old acknowledgement remains valid only
+  // for that original base context, never for the newly derived review.
+  if (stored && !stored.ok && snapshot.scoreReferenceSource && pin) {
+    stored = await loadStoredBidLaunchReview(database, sessionId, {
+      ...context,
+      contextSha256: pin.contextSha256,
+    });
+  }
   if (stored !== null && !stored.ok) return stored;
   let advisories = stored?.review.advisories;
   if (advisories === undefined && pin !== undefined) {
@@ -67,7 +76,21 @@ export async function readBidSessionLaunchReview(
       advisories = [...advisories, ...credentialHoldLaunchAdvisory(holds.length)];
     }
   }
-  const review = buildBidLaunchReview(context, [...(advisories ?? []), ...readinessAdvisories]);
+  const rankAdvisories: BidLaunchAdvisory[] = snapshot.scoreReferenceSource
+    ? [
+        {
+          id: 'final_rank_priorities',
+          code: 'reviewed_rank_source',
+          detail:
+            'Final published rank lists govern specialty points and priority. Certification requirements are unchanged.',
+        },
+      ]
+    : [];
+  const review = buildBidLaunchReview(context, [
+    ...(advisories ?? []),
+    ...readinessAdvisories,
+    ...rankAdvisories,
+  ]);
   return {
     ok: true as const,
     context,

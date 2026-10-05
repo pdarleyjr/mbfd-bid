@@ -19,7 +19,10 @@ const CONTROL_SQL = `SELECT y.year, y.configuration_revision AS configurationRev
   profile.revision AS profileRevision, profile.rule_revision AS profileRuleRevision,
   profile.profiles_json AS profilesJson, profile.compiled_json AS compiledJson,
   source.snapshot_json AS selectedSourceSnapshotJson,
-  (SELECT revision FROM annual_source_revision WHERE id=1) AS sourceRevision
+  (SELECT revision FROM annual_source_revision WHERE id=1) AS sourceRevision,
+  (SELECT COUNT(*) FROM admin_configuration_receipts rank_source
+    WHERE rank_source.operation='bid-final-rank-source'
+    AND json_extract(rank_source.response_json,'$.record.year')=y.year) AS rankSourceRevision
   FROM bid_years y LEFT JOIN rule_books b ON b.version=y.rule_book_version
   LEFT JOIN position_templates t ON t.version=y.position_template_version
   LEFT JOIN annual_bid_policy_documents p ON p.id=y.annual_policy_document_id
@@ -35,6 +38,7 @@ const ControlSchema = z
     year: z.number().int(),
     configurationRevision: Revision,
     sourceRevision: Revision,
+    rankSourceRevision: Revision,
     ruleBookVersion: z.string().nullable(),
     positionTemplateVersion: z.string().nullable(),
     ruleBookRevision: Revision.nullable(),

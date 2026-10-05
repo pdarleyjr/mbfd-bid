@@ -30,7 +30,14 @@ export function bidLaunchContextForSnapshot(
       mode,
       versionId: pin.data.versionId,
       versionSha256: pin.data.versionSha256,
-      contextSha256: pin.data.contextSha256,
+      contextSha256: snapshot.scoreReferenceSource
+        ? bidContentHash(
+            canonicalize({
+              baseContextSha256: pin.data.contextSha256,
+              scoringReceiptSha256: snapshot.scoreReferenceSource.receiptSha256,
+            } as JsonValue),
+          )
+        : pin.data.contextSha256,
     };
   }
   const source = {
@@ -136,13 +143,15 @@ export async function loadStoredBidLaunchReview(
   database: D1Database,
   sessionId: string,
   context: BidLaunchContext,
+  expectedReviewSha256?: string,
 ) {
   const row = await database
     .prepare(`SELECT after_state FROM audit_log
     WHERE bid_session_id=? AND action='session_start' AND actor_type='admin' AND actor_id IS NOT NULL
       AND json_extract(after_state,'$.operatorLaunchReview') IS NOT NULL
+      AND (? IS NULL OR json_extract(after_state,'$.operatorLaunchReview.review.advisorySha256')=?)
     ORDER BY seq DESC LIMIT 1`)
-    .bind(sessionId)
+    .bind(sessionId, expectedReviewSha256 ?? null, expectedReviewSha256 ?? null)
     .first<{ after_state: string }>();
   if (!row) return null;
   try {

@@ -27,6 +27,7 @@ import { loadPinnedBidEvidenceFreeze } from './bid-evidence-reviewed-update-stor
 import { credentialHoldLaunchAdvisory, sourceQuestionLaunchAdvisory } from './bid-launch-review.js';
 import { withResolvedBidOrderingAuthority } from './bid-ordering-authority.js';
 import { type BidOrdinalDatasetRow, projectBidOrdinals } from './bid-ordinal-evidence.js';
+import { applyStoredSessionRankSource } from './bid-rank-source.js';
 import {
   bidSourceDecisionBlocksPurpose,
   bidSourceDecisionReviewIssues,
@@ -478,6 +479,7 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
   credentials: Array<{ name: string }>;
   memberId: number;
   scoringEvidence: FrozenBidEligibilityMember['scoringEvidence'];
+  scoreReferenceEvidence?: FrozenBidEligibilityMember['scoreReferenceEvidence'];
   serviceCredits: NonNullable<FrozenBidEligibilityMember['serviceCredits']>;
 } {
   if (member.rank === 'CIVILIAN') {
@@ -495,6 +497,9 @@ export function eligibilityMemberFromFrozen(member: FrozenBidEligibilityMember):
     credentials: member.credentialNames.map((name) => ({ name })),
     memberId: member.memberId,
     scoringEvidence: member.scoringEvidence,
+    ...(member.scoreReferenceEvidence
+      ? { scoreReferenceEvidence: member.scoreReferenceEvidence }
+      : {}),
     serviceCredits: member.serviceCredits ?? [],
   };
 }
@@ -2443,7 +2448,19 @@ export async function loadBidSessionPolicySnapshot(
       !snapshotMatchesBidDefinition(validated.snapshot, version)
     )
       return { snapshot: null, error: 'invalid' };
-    return { snapshot: validated.snapshot, error: null };
+    try {
+      return {
+        snapshot: await applyStoredSessionRankSource(
+          db,
+          bidSessionId,
+          validated.snapshot,
+          row.snapshotSha256 as string,
+        ),
+        error: null,
+      };
+    } catch {
+      return { snapshot: null, error: 'invalid' };
+    }
   }
   const snapshot = parseBidSessionPolicySnapshot(row.snapshotJson);
   const owned = await db.get(sql`SELECT id FROM bid_definition_versions

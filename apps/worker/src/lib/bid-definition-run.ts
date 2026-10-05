@@ -13,8 +13,9 @@ import {
 import { bidSnapshotSha256, validateBidDefinitionSnapshotPin } from './bid-definition-pin.js';
 import { captureBidDefinitionControl } from './bid-definition-source.js';
 import { loadBidDefinitionVersion } from './bid-definition-version.js';
-import { type BidLaunchContext, buildBidLaunchReview } from './bid-launch-review.js';
+import { bidLaunchContextForSnapshot, buildBidLaunchReview } from './bid-launch-review.js';
 import { loadExplicitBidPolicySource, prepareConfiguredBidPolicySnapshot } from './bid-policy.js';
+import { applyRankSource, loadVersionRankSource } from './bid-rank-source.js';
 
 /** Build a run from an explicit immutable version without touching a year
  * designation. This is still a read-only preparation: callers must place the
@@ -123,7 +124,7 @@ export async function prepareBidDefinitionRun(
     content: version.content,
   });
   if (!compiledStagePolicy.ok) return compiledStagePolicy;
-  const executionSnapshot =
+  let executionSnapshot =
     'executionPolicy' in compiledStagePolicy
       ? prepared.snapshot.settings.v === 3
         ? {
@@ -145,6 +146,22 @@ export async function prepareBidDefinitionRun(
     return { ok: false as const, code: 'bid_definition_source_changed' };
   if (!snapshotMatchesBidDefinition(executionSnapshot, version))
     return { ok: false as const, code: 'bid_version_execution_material_mismatch' };
+  const rankSource = await loadVersionRankSource(
+    getDb(database),
+    input.year,
+    input.versionId,
+    input.versionSha256,
+  );
+  if (rankSource) {
+    try {
+      executionSnapshot = applyRankSource(executionSnapshot, rankSource, {
+        versionId: input.versionId,
+        versionSha256: input.versionSha256,
+      });
+    } catch {
+      return { ok: false as const, code: 'bid_version_execution_material_mismatch' };
+    }
+  }
   const contextSha256 = bidDefinitionContextHash(executionSnapshot);
   const snapshot = {
     ...executionSnapshot,
@@ -198,13 +215,26 @@ export async function prepareBidDefinitionRun(
     ...(input.operatorControlledLaunch
       ? {
           launchReview: buildBidLaunchReview(
-            {
+            bidLaunchContextForSnapshot(snapshot, input.mode) ?? {
               mode: input.mode,
               versionId: version.row.id,
               versionSha256: version.sha256,
               contextSha256,
-            } satisfies BidLaunchContext,
-            [...inventoryAdvisories, ...(prepared.launchAdvisories ?? [])],
+            },
+            [
+              ...inventoryAdvisories,
+              ...(prepared.launchAdvisories ?? []),
+              ...(snapshot.scoreReferenceSource
+                ? [
+                    {
+                      id: 'final_rank_priorities',
+                      code: 'reviewed_rank_source',
+                      detail:
+                        'Final published rank lists govern specialty points and priority. Certification requirements are unchanged.',
+                    },
+                  ]
+                : []),
+            ],
           ),
         }
       : {}),

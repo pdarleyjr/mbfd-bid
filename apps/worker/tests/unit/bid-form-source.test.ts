@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BidFormArchiveSchema,
   type BidFormReceipt,
+  type PublishedRankList,
   type SubmittedBidForm,
   bidFormArchiveHasIdentityConflict,
   bidFormArchiveHash,
@@ -27,6 +28,33 @@ const receipt = (forms = [form()]): BidFormReceipt => ({
   publishedBy: 'synthetic-operator',
 });
 const member = { memberId: 1, employeeId: 'member-1', firstName: 'First', lastName: 'Member' };
+const rankList = (listId = 'STATION_TWO_LIEUTENANT'): PublishedRankList => ({
+  listId,
+  title: 'Station 2 Lieutenant',
+  source: {
+    name: 'Synthetic final rank list.pdf',
+    sha256: 'e'.repeat(64),
+    pages: 1,
+    generatedAt: [],
+  },
+  columns: ['drone', 'operations', 'total', 'preferences'],
+  columnLabels: {
+    drone: 'Drone',
+    operations: 'Operations',
+    total: 'Total',
+    preferences: 'Preferences',
+  },
+  rows: [
+    {
+      employeeId: member.employeeId,
+      sourceMemberName: 'Member First',
+      sourceRank: 'Lieutenant',
+      bidOrder: null,
+      values: { drone: 1, operations: 6, total: 12, preferences: 'First choice' },
+      provenance: [{ page: 1, textLine: 3, bbox: [10, 20, 200, 30] }],
+    },
+  ],
+});
 
 describe('documentary member bid forms', () => {
   it('preserves preference order, source labels and provenance without generating seat IDs or commands', () => {
@@ -177,5 +205,77 @@ describe('documentary member bid forms', () => {
     if (!submitted) throw new Error('Synthetic form missing');
     submitted.phone1 = 'changed synthetic contact';
     expect(await bidFormArchiveHash(archive)).not.toBe(before);
+  });
+  it('preserves old archive bytes and hash when generic lists are absent', async () => {
+    const old = receipt().archive;
+    const parsed = BidFormArchiveSchema.parse(old);
+    expect(parsed).not.toHaveProperty('rankLists');
+    expect(JSON.stringify(parsed)).toBe(JSON.stringify(old));
+    expect(await bidFormArchiveHash(parsed)).toBe(await bidFormArchiveHash(old));
+    expect(projectMemberBidForm(receipt(), member, 2026, null).rankReferences).toEqual([]);
+  });
+  it('projects multiple exact identity references without making credentials or correcting literal source cells', () => {
+    const saved = receipt();
+    saved.archive.rankLists = [rankList(), rankList('FIRE_INVESTIGATOR')];
+    const parsed = BidFormArchiveSchema.parse(saved.archive);
+    expect(bidFormArchiveHasIdentityConflict(parsed)).toBe(false);
+    const projected = projectMemberBidForm(saved, member, 2026, 'real-session');
+    expect(projected.rankReferences).toHaveLength(2);
+    expect(projected.rankReferences?.[0]?.row).toMatchObject({
+      bidOrder: null,
+      values: { total: 12 },
+    });
+    expect(projected.rankReferences?.[0]?.source.generatedAt).toEqual([]);
+    expect(projected.rankReferences?.[0]).not.toHaveProperty('rows');
+    expect(projected).not.toHaveProperty('credentialNames');
+    expect(projected).not.toHaveProperty('eligible');
+    expect(
+      projectMemberBidForm(saved, { ...member, employeeId: 'other' }, 2026, null).rankReferences,
+    ).toEqual([]);
+    expect(
+      projectMemberBidForm(saved, { ...member, firstName: 'Other' }, 2026, null).rankReferences,
+    ).toEqual([]);
+  });
+  it.each([
+    'duplicate-list',
+    'duplicate-member',
+    'missing-column',
+    'extra-column',
+    'wrong-label',
+    'outside-page',
+    'reversed-bounds',
+    'unknown-key',
+    'nonfinite',
+  ] as const)('rejects invalid published list evidence: %s', (kind) => {
+    const saved = receipt().archive;
+    const list = rankList();
+    saved.rankLists = [list];
+    const row = list.rows[0];
+    if (!row) throw new Error('Missing synthetic rank row');
+    const location = row.provenance[0];
+    if (!location) throw new Error('Missing synthetic source location');
+    if (kind === 'duplicate-list') saved.rankLists.push(rankList());
+    if (kind === 'duplicate-member') list.rows.push({ ...row });
+    if (kind === 'missing-column')
+      row.values = Object.fromEntries(
+        Object.entries(row.values).filter(([key]) => key !== 'total'),
+      );
+    if (kind === 'extra-column') row.values.unknown = 1;
+    if (kind === 'wrong-label') list.columnLabels.unknown = 'Unknown';
+    if (kind === 'outside-page') location.page = 2;
+    if (kind === 'reversed-bounds') location.bbox = [200, 20, 10, 30];
+    if (kind === 'unknown-key') Object.assign(row, { eligible: true });
+    if (kind === 'nonfinite') row.values.total = Number.POSITIVE_INFINITY;
+    expect(BidFormArchiveSchema.safeParse(saved).success).toBe(false);
+  });
+  it('does not pick the first duplicate list row in projection', () => {
+    const saved = receipt();
+    const list = rankList();
+    const row = list.rows[0];
+    if (!row) throw new Error('Missing synthetic rank row');
+    list.rows.push({ ...row });
+    saved.archive.rankLists = [list];
+    expect(bidFormArchiveHasIdentityConflict(saved.archive)).toBe(true);
+    expect(projectMemberBidForm(saved, member, 2026, null).rankReferences).toEqual([]);
   });
 });

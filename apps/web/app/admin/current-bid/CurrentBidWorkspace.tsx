@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BidBlueprint } from './BidBlueprint';
 import { BidChangeReview } from './BidChangeReview';
+import { BidDocumentarySourceImport } from './BidDocumentarySourceImport';
 import { FieldSection } from './BidFields';
 import { BidImpactReview } from './BidImpactReview';
 import { BidLiveReview } from './BidLiveReview';
@@ -24,6 +25,7 @@ import { BidOperations } from './BidOperations';
 import { BidOpportunityFields } from './BidOpportunityFields';
 import { BidPolicyFields, type PolicySection } from './BidPolicyFields';
 import { BidProfileReview } from './BidProfileReview';
+import { BidRankSourceReview } from './BidRankSourceReview';
 import { BidReadinessSummary } from './BidReadinessSummary';
 import { BidResults } from './BidResults';
 import { BidRetainedParticipation } from './BidRetainedParticipation';
@@ -881,6 +883,8 @@ export function CurrentBidWorkspace({
             onApply={applyReviewedSourceUpdate}
           />
         )}
+      <BidDocumentarySourceImport key={`forms:${actorScope}:${year}`} year={year} />
+      <BidRankSourceReview key={`rank:${actorScope}:${year}`} year={year} />
       <details>
         <summary className="min-h-11 cursor-pointer content-center font-semibold">
           Advanced Bid configuration
