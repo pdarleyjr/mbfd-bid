@@ -4,6 +4,7 @@ import { type Root, createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PositionMeta } from '../../app/_components/bid/types';
 import { AnnualLiveControls } from '../../app/admin/bid/_components/AnnualLiveControls';
+import type { useBidOperator } from '../../app/admin/bid/_components/BidOperatorContext';
 
 vi.mock('@/components/admin/TaskPanel', () => ({
   TaskPanel: ({ open, title, children }: { open: boolean; title: string; children: ReactNode }) =>
@@ -11,10 +12,23 @@ vi.mock('@/components/admin/TaskPanel', () => ({
 }));
 const operator = {
   selectedMemberId: 17,
+  activeMemberId: 17,
+  selectMember: vi.fn(),
   setActiveMember: vi.fn(),
+  positionIntent: null,
+  choosePosition: vi.fn(),
+  overrideIntent: null,
+  requestADay: vi.fn(),
+  aDayProjection: null,
+  setADayProjection: vi.fn(),
+  specialtyRoster: null,
+  setSpecialtyRoster: vi.fn(),
+  boardSequence: 0,
+  observeBoardSequence: vi.fn(),
+  overrideAllowed: true,
   setOverrideAllowed: vi.fn(),
   requestOverride: vi.fn(),
-};
+} satisfies NonNullable<ReturnType<typeof useBidOperator>>;
 vi.mock('../../app/admin/bid/_components/BidOperatorContext', () => ({
   useBidOperator: () => operator,
 }));
