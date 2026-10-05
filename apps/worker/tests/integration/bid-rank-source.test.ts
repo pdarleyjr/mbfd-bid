@@ -8,6 +8,7 @@ import {
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../src/db/index.js';
+import { type BidSessionState, emptyBidSessionState } from '../../src/durable/bid-session-state.js';
 import { bidDefinitionContextHash } from '../../src/lib/bid-definition-context.js';
 import type { PinnedBidSessionPolicySnapshot } from '../../src/lib/bid-definition-pin.js';
 import { prepareBidDefinitionRun } from '../../src/lib/bid-definition-run.js';
@@ -35,6 +36,7 @@ import {
   applyStoredSessionRankSource,
   buildRankSourceMembers,
   createRankSourceReceipt,
+  loadActiveRankCheckpoint,
   loadSessionRankSource,
   rankSourceKey,
 } from '../../src/lib/bid-rank-source.js';
@@ -46,6 +48,18 @@ import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
 
 const YEAR = 2026;
 const MEMBER = 10001;
+const ACTIVE_BIDDER = 228;
+const LEGACY_BIDDER = 1;
+const syntheticMembers = [
+  MEMBER,
+  MEMBER + 1,
+  MEMBER + 2,
+  MEMBER + 3,
+  MEMBER + 4,
+  MEMBER + 5,
+  ACTIVE_BIDDER,
+  LEGACY_BIDDER,
+];
 const SESSION = 'synthetic-rank-source-real';
 const MOCK = 'synthetic-rank-source-old-mock';
 const NOW = Date.parse('2026-10-05T10:00:00.000Z');
@@ -122,7 +136,7 @@ function settings() {
           id: 'synthetic-captains',
           label: 'Synthetic captains',
           order: 0,
-          memberIds: [MEMBER],
+          memberIds: syntheticMembers,
           opportunityPositionIds: categories.map(([, id]) => id),
           kind: 'CAPTAIN',
         },
@@ -243,6 +257,158 @@ describe('final rank source receipt integrity and protected session integration'
       .get(RANK_SOURCE_OPERATION) as { count: number };
   }
 
+  function seedActive(
+    options: {
+      sessionPhase?: string;
+      frozenAt?: number;
+      sessionBidderId?: number;
+      canonicalBidderId?: number;
+      canonicalBidderPool?: 'OFC' | 'FF';
+    } = {},
+  ) {
+    const state: BidSessionState = {
+      ...emptyBidSessionState(SESSION),
+      currentPhase: 'position_bid',
+      currentBidderId: options.canonicalBidderId ?? ACTIVE_BIDDER,
+      turnStartedAtMs: NOW,
+      bidOrder: syntheticMembers.map((memberId, ordinal) => ({
+        memberId,
+        ordinal,
+        pool: memberId === ACTIVE_BIDDER ? (options.canonicalBidderPool ?? 'OFC') : 'OFC',
+        stageId: 'synthetic-captains',
+      })),
+      queueCursor: 6,
+      live: {
+        currentStageId: 'synthetic-captains',
+        completedStageIds: [],
+        pausedPhase: null,
+        lastSelectionBidId: null,
+        dispositions: [],
+        specialty: null,
+        corrections: [],
+        presentation: { mode: 'LIVE', heldAtSeq: null, heldProjection: null },
+      },
+    };
+    h.sqlite
+      .prepare(`UPDATE bid_sessions SET current_phase=?,current_bidder_id=?,frozen_at=?
+      WHERE id=?`)
+      .run(
+        options.sessionPhase ?? 'position_bid',
+        options.sessionBidderId ?? LEGACY_BIDDER,
+        options.frozenAt ?? null,
+        SESSION,
+      );
+    for (const row of state.bidOrder) {
+      h.sqlite
+        .prepare(
+          'INSERT INTO bid_order(bid_session_id,ordinal,member_id,pool,stage_id) VALUES(?,?,?,?,?)',
+        )
+        .run(SESSION, row.ordinal, row.memberId, row.pool, row.stageId);
+    }
+    h.sqlite
+      .prepare(`INSERT INTO canonical_bid_session_state
+      (bid_session_id,current_seq,state_json,last_command_id,created_at,updated_at)
+      VALUES(?,0,?,NULL,?,?)`)
+      .run(SESSION, JSON.stringify(state), NOW, NOW);
+    for (let seq = 1; seq <= 7; seq++) {
+      const commandId = `synthetic-active-command-${seq}`;
+      if (seq <= 5) {
+        const positionId = categories[seq - 1]?.[1];
+        if (!positionId) throw new Error('Synthetic seat missing');
+        state.fills[positionId] = {
+          memberId: MEMBER + seq,
+          ordinal: seq,
+          bidId: `synthetic-award-${seq}`,
+          aDay: seq % 2 === 0 ? 'G2' : 'G1',
+          ...(seq === 5
+            ? { forced: { commandId, actorMemberId: MEMBER, reason: '', atMs: NOW } }
+            : {}),
+        };
+      } else if (seq === 6 && state.live) {
+        const before = state.fills.A212;
+        if (!before) throw new Error('Synthetic prior award missing');
+        const after = { ...before, bidId: 'synthetic-corrected-award', aDay: 'G3' as const };
+        const { A212: _prior, ...otherFills } = state.fills;
+        state.fills = { ...otherFills, D101: after };
+        state.live.corrections = [
+          {
+            bidId: after.bidId,
+            commandId,
+            originalBidId: before.bidId,
+            originalCommandId: 'synthetic-active-command-1',
+            originalADayCommandId: null,
+            before: { positionId: 'A212', fill: before, aDay: null },
+            after: { positionId: 'D101', fill: after },
+            resolvesCorrectionBidId: null,
+            actorMemberId: MEMBER,
+            reason: '',
+            sequence: seq,
+            atMs: NOW,
+          },
+        ];
+      }
+      state.lastSeq = seq;
+      h.sqlite
+        .prepare(`UPDATE canonical_bid_session_state
+        SET current_seq=?,state_json=?,last_command_id=?,updated_at=? WHERE bid_session_id=?`)
+        .run(seq, JSON.stringify(state), commandId, NOW + seq, SESSION);
+      h.sqlite
+        .prepare(`INSERT INTO bid_command_receipts
+        (command_id,bid_session_id,command_type,request_sha256,actor_id,expected_seq,result_seq,outcome,result_json,created_at)
+        VALUES(?,?,?, ?,?,?,?,'accepted',?,?)`)
+        .run(
+          commandId,
+          SESSION,
+          seq === 6 ? 'live.amend_selection' : 'live.record_selection',
+          hash(commandId),
+          MEMBER,
+          seq - 1,
+          seq,
+          JSON.stringify({ kind: 'accepted', commandId, seq }),
+          NOW + seq,
+        );
+      const auditId = `synthetic-active-audit-${seq}`;
+      h.sqlite
+        .prepare(`INSERT INTO audit_log
+        (id,bid_session_id,seq,actor_type,actor_id,action,target_kind,target_id,after_state,created_at)
+        VALUES(?,?,?,'admin',?,'bid_pick','bid_session',?,?,?)`)
+        .run(auditId, SESSION, seq, MEMBER, SESSION, JSON.stringify(state), NOW + seq);
+      h.sqlite
+        .prepare(`INSERT INTO bid_command_events
+        (id,bid_session_id,command_id,audit_log_id,seq,event_type,event_json,actor_id,created_at)
+        VALUES(?,?,?,?,?,'synthetic-award',?,?,?)`)
+        .run(
+          `synthetic-active-event-${seq}`,
+          SESSION,
+          commandId,
+          auditId,
+          seq,
+          JSON.stringify(state),
+          MEMBER,
+          NOW + seq,
+        );
+    }
+    const raw = h.sqlite
+      .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+      .get(SESSION) as { state_json: string };
+    return {
+      checkpoint: {
+        expectedCanonicalSeq: state.lastSeq,
+        expectedCanonicalStateSha256: hash(raw.state_json),
+      },
+      state,
+    };
+  }
+
+  function advanceActive(state: BidSessionState) {
+    state.lastSeq++;
+    h.sqlite
+      .prepare(`UPDATE canonical_bid_session_state
+      SET current_seq=?,state_json=?,last_command_id='synthetic-concurrent-command',updated_at=?
+      WHERE bid_session_id=?`)
+      .run(state.lastSeq, JSON.stringify(state), NOW + 50, SESSION);
+  }
+
   beforeEach(async () => {
     h = await setupTestD1();
     h.sqlite.exec(`INSERT INTO members
@@ -250,6 +416,13 @@ describe('final rank source receipt integrity and protected session integration'
       VALUES(${MEMBER},'synthetic-rank-editor','Synthetic','Reviewer','CPT','OFC',1,0,1,1);
       INSERT INTO position_templates(version,effective_year) VALUES('2026.synthetic-ranks',2026);
       INSERT INTO rule_books(version,effective_year,status,revision) VALUES('2026.synthetic-ranks',2026,'draft',0);`);
+    for (const memberId of syntheticMembers.slice(1)) {
+      h.sqlite
+        .prepare(`INSERT INTO members
+        (id,employee_id,first_name,last_name,rank,bid_category,rsc_seniority,is_probationary,created_at,updated_at)
+        VALUES(?,?,'Synthetic',?,'CPT','OFC',?,0,1,1)`)
+        .run(memberId, `synthetic-rank-${memberId}`, `Member ${memberId}`, memberId);
+    }
     h.sqlite
       .prepare(`INSERT INTO bid_years
       (year,status,rule_book_version,position_template_version,configuration_revision,config_json)
@@ -307,33 +480,29 @@ describe('final rank source receipt integrity and protected session integration'
       settings: version.content.settings,
       credentialEvaluationOn: '2026-10-05',
       capturedAtMs: NOW,
-      members: [
-        {
-          memberId: MEMBER,
-          pool: 'OFC',
-          rscSeniority: 1,
-          rankSeniority: 2,
-          exclusionReason: null,
-          authoritativeAssignmentId: null,
-          rank: 'CPT',
-          isProbationary: false,
-          credentialNames: ['Synthetic baseline credential'],
-          specialtyQualifications: [],
-          scoringEvidence: {
-            evaluationOn: '2026-10-05',
-            completedCredentialNames: ['Synthetic baseline credential'],
-          },
+      members: syntheticMembers.map((memberId) => ({
+        memberId,
+        pool: 'OFC',
+        rscSeniority: 1,
+        rankSeniority: 2,
+        exclusionReason: null,
+        authoritativeAssignmentId: null,
+        rank: 'CPT',
+        isProbationary: false,
+        credentialNames: ['Synthetic baseline credential'],
+        specialtyQualifications: [],
+        scoringEvidence: {
+          evaluationOn: '2026-10-05',
+          completedCredentialNames: ['Synthetic baseline credential'],
         },
-      ],
-      operatorIdentityProjection: [
-        {
-          memberId: MEMBER,
-          employeeId: 'synthetic-rank-editor',
-          firstName: 'Synthetic',
-          lastName: 'Reviewer',
-          rank: 'CPT',
-        },
-      ],
+      })),
+      operatorIdentityProjection: syntheticMembers.map((memberId) => ({
+        memberId,
+        employeeId: memberId === MEMBER ? 'synthetic-rank-editor' : `synthetic-rank-${memberId}`,
+        firstName: 'Synthetic',
+        lastName: memberId === MEMBER ? 'Reviewer' : `Member ${memberId}`,
+        rank: 'CPT',
+      })),
       ruleBookMaterial: {
         v: 1,
         positions: version.content.positions.map((position) => ({
@@ -528,7 +697,10 @@ describe('final rank source receipt integrity and protected session integration'
     expect(prepared.ok, JSON.stringify(prepared)).toBe(true);
     if (!prepared.ok || !receipt) throw new Error('Synthetic preparation missing');
     expect(prepared.snapshot.scoreReferenceSource?.receiptSha256).toBe(receipt.sha256);
-    expect(prepared.snapshot.members[0]?.scoreReferenceEvidence).toHaveLength(16);
+    expect(
+      prepared.snapshot.members.find((member) => member.memberId === MEMBER)
+        ?.scoreReferenceEvidence,
+    ).toHaveLength(16);
     insertSession('synthetic-new-mock', true, prepared.snapshot);
     const reloaded = await loadBidSessionPolicySnapshot(getDb(h.env.DB), 'synthetic-new-mock');
     expect(reloaded.error).toBeNull();
@@ -726,7 +898,183 @@ describe('final rank source receipt integrity and protected session integration'
     expect(rankReceiptCount().count).toBe(0);
   });
 
-  it('rejects started sessions without changing rank references', async () => {
+  it('updates active future scoring at an exact checkpoint without changing five recorded fills, forced markers, corrections or history', async () => {
+    const active = seedActive();
+    expect(active.state.currentBidderId).toBe(ACTIVE_BIDDER);
+    expect(
+      h.sqlite.prepare('SELECT current_bidder_id FROM bid_sessions WHERE id=?').get(SESSION),
+    ).toEqual({ current_bidder_id: LEGACY_BIDDER });
+    expect(await loadActiveRankCheckpoint(h.env.DB, SESSION)).toMatchObject({ ok: true });
+    const preservedTables = [
+      'bid_sessions',
+      'bid_session_policy_snapshots',
+      'canonical_bid_session_state',
+      'bid_order',
+      'bids',
+      'a_day_picks',
+      'bid_command_receipts',
+      'bid_command_events',
+    ];
+    const before = preservedTables.map(
+      (table) => [table, h.sqlite.prepare(`SELECT * FROM ${table}`).all()] as const,
+    );
+    const auditBefore = h.sqlite.prepare('SELECT * FROM audit_log ORDER BY seq').all();
+    const metadata = await request('/2026/score-review');
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({
+      sessions: [
+        {
+          id: SESSION,
+          phase: 'position_bid',
+          ...active.checkpoint,
+        },
+      ],
+    });
+    const response = await apply(SESSION, active.checkpoint);
+    expect(response.status).toBe(201);
+    const receipt = (await response.json()) as { activeCheckpoint: unknown; receiptSha256: string };
+    expect(receipt.activeCheckpoint).toEqual({
+      phase: 'position_bid',
+      canonicalSeq: 7,
+      canonicalStateSha256: active.checkpoint.expectedCanonicalStateSha256,
+    });
+    for (const [table, rows] of before)
+      expect(h.sqlite.prepare(`SELECT * FROM ${table}`).all(), table).toEqual(rows);
+    expect(
+      h.sqlite
+        .prepare("SELECT * FROM audit_log WHERE target_kind<>'rank_source' ORDER BY seq")
+        .all(),
+    ).toEqual(auditBefore);
+    const loaded = await loadBidSessionPolicySnapshot(getDb(h.env.DB), SESSION);
+    expect(loaded.error).toBeNull();
+    expect(
+      loaded.snapshot?.v === 3 && loaded.snapshot.members[0]?.scoreReferenceEvidence,
+    ).toHaveLength(16);
+    expect(loaded.snapshot?.v === 3 && loaded.snapshot.members[0]?.credentialNames).toEqual([
+      'Synthetic baseline credential',
+    ]);
+    const stored = await loadSessionRankSource(getDb(h.env.DB), SESSION);
+    expect(stored?.record.activeCheckpoint).toEqual(receipt.activeCheckpoint);
+    expect(stored?.sha256).toBe(receipt.receiptSha256);
+    expect((await apply(SESSION, active.checkpoint)).status).toBe(200);
+    expect(rankReceiptCount().count).toBe(1);
+    expect(Object.keys(active.state.fills)).toHaveLength(5);
+    expect(active.state.fills.A102?.forced).toBeDefined();
+    expect(active.state.fills.D101?.aDay).toBe('G3');
+    expect(active.state.live?.corrections).toHaveLength(1);
+  });
+
+  it.each(['expectedCanonicalSeq', 'expectedCanonicalStateSha256', 'archiveSha256'])(
+    'rejects a stale active %s without changing progress or committing a receipt',
+    async (field) => {
+      const active = seedActive();
+      const before = hash(Buffer.from(h.sqlite.serialize()).toString('base64'));
+      const changed = field === 'expectedCanonicalSeq' ? 6 : 'f'.repeat(64);
+      expect((await apply(SESSION, { ...active.checkpoint, [field]: changed })).status).toBe(409);
+      expect(rankReceiptCount().count).toBe(0);
+      expect(hash(Buffer.from(h.sqlite.serialize()).toString('base64'))).toBe(before);
+    },
+  );
+
+  it('requires both fresh checkpoint fields for an active update', async () => {
+    const active = seedActive();
+    expect((await apply()).status).toBe(409);
+    expect(
+      (await apply(SESSION, { expectedCanonicalSeq: active.checkpoint.expectedCanonicalSeq }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await apply(SESSION, {
+          expectedCanonicalStateSha256: active.checkpoint.expectedCanonicalStateSha256,
+        })
+      ).status,
+    ).toBe(400);
+    expect(rankReceiptCount().count).toBe(0);
+  });
+
+  it('does not list or modify an active pending specialty capsule', async () => {
+    const active = seedActive();
+    if (!active.state.live) throw new Error('Synthetic live state missing');
+    active.state.live.specialty = {
+      specialtyId: 'synthetic-specialty',
+      positionId: 'A212',
+      suspendedBidderId: MEMBER,
+      candidateMemberIds: [MEMBER],
+      candidateCursor: 0,
+    };
+    advanceActive(active.state);
+    const raw = JSON.stringify(active.state);
+    expect(
+      (
+        await apply(SESSION, {
+          expectedCanonicalSeq: active.state.lastSeq,
+          expectedCanonicalStateSha256: hash(raw),
+        })
+      ).status,
+    ).toBe(409);
+    expect(await (await request('/2026/score-review')).json()).toMatchObject({ sessions: [] });
+    expect(rankReceiptCount().count).toBe(0);
+  });
+
+  it.each(['frozen', 'complete', 'nonexistent_canonical_bidder', 'inconsistent_canonical_pool'])(
+    'rejects an active %s session and preserves its progress',
+    async (condition) => {
+      const active = seedActive(
+        condition === 'frozen'
+          ? { frozenAt: NOW }
+          : condition === 'complete'
+            ? { sessionPhase: 'complete' }
+            : condition === 'nonexistent_canonical_bidder'
+              ? { canonicalBidderId: 90000 }
+              : { canonicalBidderPool: 'FF' },
+      );
+      const before = hash(Buffer.from(h.sqlite.serialize()).toString('base64'));
+      expect((await apply(SESSION, active.checkpoint)).status).toBe(409);
+      expect(await (await request('/2026/score-review')).json()).toMatchObject({ sessions: [] });
+      expect(hash(Buffer.from(h.sqlite.serialize()).toString('base64'))).toBe(before);
+    },
+  );
+
+  it('rolls back active receipt and audit if canonical progress changes immediately before the batch', async () => {
+    const active = seedActive();
+    const originalBatch = h.env.DB.batch.bind(h.env.DB);
+    const audits = h.sqlite.prepare('SELECT * FROM audit_log ORDER BY seq').all();
+    h.env.DB.batch = async (statements) => {
+      advanceActive(active.state);
+      return originalBatch(statements);
+    };
+    expect((await apply(SESSION, active.checkpoint)).status).toBe(503);
+    expect(rankReceiptCount().count).toBe(0);
+    expect(h.sqlite.prepare('SELECT * FROM audit_log ORDER BY seq').all()).toEqual(audits);
+    expect(
+      h.sqlite
+        .prepare('SELECT current_seq FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION),
+    ).toEqual({ current_seq: 8 });
+  });
+
+  it('rolls back active receipt and audit if the captured legacy projection drifts before the batch', async () => {
+    const active = seedActive();
+    const originalBatch = h.env.DB.batch.bind(h.env.DB);
+    const audits = h.sqlite.prepare('SELECT * FROM audit_log ORDER BY seq').all();
+    h.env.DB.batch = async (statements) => {
+      h.sqlite
+        .prepare('UPDATE bid_sessions SET current_bidder_id=? WHERE id=?')
+        .run(ACTIVE_BIDDER, SESSION);
+      return originalBatch(statements);
+    };
+    expect((await apply(SESSION, active.checkpoint)).status).toBe(503);
+    expect(rankReceiptCount().count).toBe(0);
+    expect(h.sqlite.prepare('SELECT * FROM audit_log ORDER BY seq').all()).toEqual(audits);
+    expect(
+      h.sqlite
+        .prepare('SELECT state_json FROM canonical_bid_session_state WHERE bid_session_id=?')
+        .get(SESSION),
+    ).toEqual({ state_json: JSON.stringify(active.state) });
+  });
+
+  it('rejects started sessions without canonical state or a checkpoint', async () => {
     h.sqlite
       .prepare("UPDATE bid_sessions SET current_phase='position_bid' WHERE id=?")
       .run(SESSION);

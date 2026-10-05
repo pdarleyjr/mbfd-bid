@@ -40,6 +40,7 @@ const source = {
 };
 const readback = {
   sequence: 4,
+  scoreReceiptSha256: 'a'.repeat(64),
   sealed: false,
   sources: [source],
   positions: [
@@ -52,6 +53,7 @@ const readback = {
 const preview = {
   valid: true,
   expectedSeq: 4,
+  scoreReceiptSha256: 'b'.repeat(64),
   before: { positionId: 'one', fill: { memberId: 17, aDay: 'G1' }, aDay: null },
   after: { positionId: 'one', fill: { memberId: 17, aDay: 'G2' } },
   reason: 'Recorded wrong A-Day',
@@ -531,6 +533,7 @@ describe('guided audited correction', () => {
       expectedSeq: 4,
       replacement: { positionId: 'one', aDay: 'G3' },
       reason: '',
+      expectedScoreReceiptSha256: 'b'.repeat(64),
     });
   });
 

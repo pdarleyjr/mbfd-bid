@@ -28,6 +28,7 @@ type Source = {
 };
 type Readback = {
   sequence: number;
+  scoreReceiptSha256?: string | null;
   sealed: boolean;
   sources: Source[];
   positions: Array<{ id: string; label: string; shift: string }>;
@@ -42,6 +43,7 @@ type Award = {
 type Preview = {
   valid: true;
   expectedSeq: number;
+  scoreReceiptSha256?: string | null;
   before: Award;
   after: Award | null;
   memberId: number;
@@ -55,6 +57,7 @@ type Command = {
   type: 'live.correct_bid';
   commandId: string;
   expectedSeq: number;
+  expectedScoreReceiptSha256?: string | null;
   memberId: number;
   reason: string;
   evidenceReference: null;
@@ -71,6 +74,11 @@ type Command = {
 
 function failure(code: string | undefined) {
   const messages: Record<string, string> = {
+    STALE_SCORE_REFERENCE:
+      'The specialty priorities changed. Refresh awards and review the correction again.',
+    NORMAL_MUTATION_LEASE_ACTIVE: 'A bid update is being saved. Try again when it finishes.',
+    NORMAL_MUTATION_LEASE_UNKNOWN:
+      'Bid updates are temporarily unavailable. Refresh awards before recording another correction.',
     step_up_required:
       'Refresh operator sign-in, then refresh awards and review this correction again. Your draft is retained.',
     session_revalidation_required:
@@ -367,6 +375,7 @@ export function CorrectBid(props: {
       type: 'live.correct_bid',
       commandId: crypto.randomUUID(),
       expectedSeq: readback.sequence,
+      expectedScoreReceiptSha256: readback.scoreReceiptSha256 ?? null,
       memberId: source.memberId,
       reason: reason.trim(),
       evidenceReference: null,
@@ -413,6 +422,7 @@ export function CorrectBid(props: {
         setNotice('The bid changed during review. Refresh awards and review again.');
         return;
       }
+      command.expectedScoreReceiptSha256 = body.scoreReceiptSha256 ?? null;
       if (overrideEnabled) {
         if (
           body.memberId !== command.memberId ||

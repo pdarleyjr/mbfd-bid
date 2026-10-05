@@ -6,6 +6,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { type JsonValue, canonicalize } from '../audit/canonical-json.js';
+import { loadCanonicalBidSessionState } from '../commands/canonical-command-service.js';
 import type { DB } from '../db/index.js';
 import { bidContentHash } from './bid-definition-content.js';
 import type { BidFormArchive, PublishedRankList } from './bid-form-source.js';
@@ -18,6 +19,23 @@ export const RankSourceRequestSchema = z
     archiveSha256: Digest,
     expectedSnapshotSha256: Digest,
     expectedVersionSha256: Digest,
+    expectedCanonicalSeq: z.number().int().safe().nonnegative().optional(),
+    expectedCanonicalStateSha256: Digest.optional(),
+  })
+  .strict()
+  .refine(
+    (request) =>
+      (request.expectedCanonicalSeq === undefined) ===
+      (request.expectedCanonicalStateSha256 === undefined),
+    {
+      message: 'An active checkpoint requires both sequence and state digest',
+    },
+  );
+const ActiveCheckpointSchema = z
+  .object({
+    phase: z.literal('position_bid'),
+    canonicalSeq: z.number().int().safe().nonnegative(),
+    canonicalStateSha256: Digest,
   })
   .strict();
 const RecordSchema = z
@@ -31,6 +49,7 @@ const RecordSchema = z
     archiveSha256: Digest,
     appliedBy: z.string().min(1).max(200),
     appliedAt: z.number().int().positive(),
+    activeCheckpoint: ActiveCheckpointSchema.optional(),
     members: z
       .array(
         z
@@ -51,6 +70,54 @@ export type RankSourceReceipt = z.infer<typeof ReceiptSchema>;
 const canonical = (value: unknown) => canonicalize(value as JsonValue);
 export const rankSourceKey = (sessionId: string, archiveSha256: string) =>
   `bid-final-rank-source:${sessionId}:${archiveSha256}`;
+
+/** Capture validated progress without exposing or rewriting any selections.
+ * The raw bytes remain server-owned for the final transactional write guard. */
+export async function loadActiveRankCheckpoint(database: D1Database, sessionId: string) {
+  const row = await database
+    .prepare(`SELECT c.current_seq,c.state_json,p.snapshot_json
+    FROM canonical_bid_session_state c
+    JOIN bid_session_policy_snapshots p ON p.bid_session_id=c.bid_session_id
+    WHERE c.bid_session_id=?`)
+    .bind(sessionId)
+    .first<{ current_seq: number; state_json: string; snapshot_json: string }>();
+  if (!row) return { ok: false as const, error: 'rank_source_active_state_invalid' };
+  const state = await loadCanonicalBidSessionState(database, sessionId);
+  const { bidDefinition: _pin, ...material } = JSON.parse(row.snapshot_json);
+  const snapshot = BidSessionPolicySnapshotSchema.parse(material);
+  // Canonical commands advance the bidder without rewriting the legacy session
+  // projection. Membership and pool come from canonical progress and its pin.
+  const currentRows = state?.bidOrder.filter((entry) => entry.memberId === state.currentBidderId);
+  const currentMembers = snapshot.members.filter(
+    (member) => member.memberId === state?.currentBidderId,
+  );
+  if (
+    !state ||
+    state.lastSeq !== row.current_seq ||
+    canonical(state) !== canonical(JSON.parse(row.state_json)) ||
+    state.currentPhase !== 'position_bid' ||
+    (state.currentBidderId !== null &&
+      (currentRows?.length !== 1 ||
+        currentMembers.length !== 1 ||
+        currentRows[0]?.pool !== currentMembers[0]?.pool)) ||
+    state.frozenAt !== null ||
+    state.turnPausedAtMs != null ||
+    !state.live ||
+    state.live.pausedPhase !== null
+  )
+    return { ok: false as const, error: 'rank_source_active_state_invalid' };
+  if (state.live.specialty != null)
+    return { ok: false as const, error: 'rank_source_specialty_in_progress' };
+  return {
+    ok: true as const,
+    checkpoint: ActiveCheckpointSchema.parse({
+      phase: 'position_bid',
+      canonicalSeq: row.current_seq,
+      canonicalStateSha256: bidContentHash(row.state_json),
+    }),
+    stateJson: row.state_json,
+  };
+}
 
 type Stored = {
   idempotency_key: string;

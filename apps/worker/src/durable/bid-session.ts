@@ -2047,6 +2047,27 @@ export class BidSessionDO implements DurableObject {
           code: 'SESSION_ID_MISMATCH',
           currentSeq: localState.lastSeq,
         };
+      const normalMutationLease = await this.normalMutationLeaseStatus();
+      if (normalMutationLease.kind !== 'none') {
+        // A stored command can only replay its immutable result. Allow that
+        // readback while a metadata writer holds the permit, but never let a
+        // new canonical command overlap its source adoption transaction.
+        const prior = await this.env.DB.prepare(
+          'SELECT command_id FROM bid_command_receipts WHERE command_id = ?',
+        )
+          .bind(command.commandId)
+          .first();
+        if (!prior)
+          return {
+            kind: 'rejected' as const,
+            commandId: command.commandId,
+            code:
+              normalMutationLease.kind === 'active'
+                ? 'NORMAL_MUTATION_LEASE_ACTIVE'
+                : 'NORMAL_MUTATION_LEASE_UNKNOWN',
+            currentSeq: localState.lastSeq,
+          };
+      }
       const db = getDb(this.env.DB);
       const frozen = await loadFrozenSessionBidPolicy(db, command.bidSessionId);
       if (!frozen.ok || frozen.snapshot.settings.v !== 3)

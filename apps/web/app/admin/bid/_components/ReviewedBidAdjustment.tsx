@@ -5,7 +5,12 @@ import { Label } from '@/components/ui/label';
 import { createCsrfAwareFetch } from '@/lib/client-csrf';
 import { useMemo, useRef, useState } from 'react';
 
-type Review = { valid: true; expectedSeq: number; warnings: { code: string; message: string }[] };
+type Review = {
+  valid: true;
+  expectedSeq: number;
+  scoreReceiptSha256: string | null;
+  warnings: { code: string; message: string }[];
+};
 
 /** All policy exceptions use the same server preview and exact reviewed command. */
 export function ReviewedBidAdjustment({
@@ -91,9 +96,17 @@ export function ReviewedBidAdjustment({
 
   async function confirm() {
     if (blocked || inFlight.current || !reviewed || !acknowledged) return;
-    const submitted = fingerprint;
-    if (pending.current?.fingerprint !== submitted)
-      pending.current = { fingerprint: submitted, commandId: crypto.randomUUID() };
+    const confirmedBody = {
+      ...body,
+      expectedScoreReceiptSha256: reviewed.scoreReceiptSha256 ?? null,
+      adminOverride: {
+        acknowledged: true,
+        warningCodes: reviewed.warnings.map((warning) => warning.code),
+      },
+    };
+    const commandFingerprint = JSON.stringify(confirmedBody);
+    if (pending.current?.fingerprint !== commandFingerprint)
+      pending.current = { fingerprint: commandFingerprint, commandId: crypto.randomUUID() };
     inFlight.current = true;
     setBusy(true);
     setNotice(null);
@@ -104,12 +117,8 @@ export function ReviewedBidAdjustment({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...body,
+            ...confirmedBody,
             commandId: pending.current.commandId,
-            adminOverride: {
-              acknowledged: true,
-              warningCodes: reviewed.warnings.map((warning) => warning.code),
-            },
           }),
         },
       );
@@ -125,9 +134,11 @@ export function ReviewedBidAdjustment({
           setAcknowledged(false);
         }
         throw new Error(
-          result?.code ??
-            result?.error ??
-            'Delivery uncertain. Confirm again to safely retry the same action.',
+          result?.code === 'STALE_SCORE_REFERENCE'
+            ? 'The scoring source changed. Review the adjustment again.'
+            : (result?.code ??
+                result?.error ??
+                'Delivery uncertain. Confirm again to safely retry the same action.'),
         );
       }
       pending.current = null;

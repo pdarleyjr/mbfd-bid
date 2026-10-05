@@ -68,6 +68,7 @@ function fallback(mode: 'VOLUNTARY' | 'FORCED' = 'VOLUNTARY') {
 function state(simultaneous = true, active = false) {
   return {
     sequence: 4,
+    scoreReceiptSha256: 'c'.repeat(64),
     a_day_selection: simultaneous ? 'SIMULTANEOUS' : null,
     current_phase: 'position_bid' as
       | 'config'
@@ -506,6 +507,7 @@ describe('simultaneous A-Day live awards', () => {
       positionId: 'abc',
       pool: { poolId: 'pool' },
       aDay: 'G2',
+      expectedScoreReceiptSha256: 'c'.repeat(64),
     });
   });
 

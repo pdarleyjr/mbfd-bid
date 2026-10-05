@@ -11,19 +11,22 @@ const ARCHIVE = 'a'.repeat(64);
 const SNAPSHOT = 'b'.repeat(64);
 const VERSION = 'c'.repeat(64);
 const RECEIPT = 'd'.repeat(64);
+const STATE = 'e'.repeat(64);
 const SESSION = 'prepared-real';
 let host: HTMLDivElement;
 let root: Root;
 
-function session(id = SESSION) {
+function session(id = SESSION, active = false) {
   return {
     id,
     isMock: false,
-    phase: 'config',
+    phase: (active ? 'position_bid' : 'config') as 'config' | 'position_bid',
     alreadyApplied: false,
     sourceReceiptSha256: null as string | null,
     expectedSnapshotSha256: SNAPSHOT,
     expectedVersionSha256: VERSION,
+    expectedCanonicalSeq: active ? 8 : null,
+    expectedCanonicalStateSha256: active ? STATE : null,
   };
 }
 
@@ -31,7 +34,7 @@ function review(year = YEAR) {
   return { year, archiveSha256: ARCHIVE as string | null, available: true, sessions: [session()] };
 }
 
-function receipt(alreadyApplied = false) {
+function receipt(alreadyApplied = false, active = false) {
   return {
     sessionId: SESSION,
     archiveSha256: ARCHIVE,
@@ -39,6 +42,15 @@ function receipt(alreadyApplied = false) {
     memberCount: 218,
     referenceCount: 1497,
     alreadyApplied,
+    ...(active
+      ? {
+          activeCheckpoint: {
+            canonicalSeq: 8,
+            canonicalStateSha256: STATE,
+            phase: 'position_bid',
+          },
+        }
+      : {}),
   };
 }
 
@@ -156,7 +168,9 @@ describe('final specialty source priorities', () => {
     fetcher.mockResolvedValue(reply({ ...review(), sessions: [{ ...session(), isMock: true }] }));
     await render();
     await open();
-    expect(host.textContent).toContain('No prepared Real Bid is available.');
+    expect(host.textContent).toContain(
+      'No prepared or active Real Bid is available for this update.',
+    );
     expect(button('Apply final priorities').disabled).toBe(true);
     fetcher.mockResolvedValue(
       reply({ year: YEAR, archiveSha256: null, available: false, sessions: [] }),
@@ -182,6 +196,175 @@ describe('final specialty source priorities', () => {
     expect(new Headers(request[1]?.headers).get('X-MBFD-CSRF')).toMatch(/^csrf_/);
     expect(host.textContent).toContain('Final priorities applied · 218 members · 1497 references.');
     expect(button('Apply final priorities').disabled).toBe(true);
+  });
+
+  it('updates remaining active picks from the reviewed checkpoint and preserves selections', async () => {
+    const original = defaultImplementation();
+    fetcher.mockImplementation((url, init) => {
+      if (String(url).endsWith('/score-review'))
+        return Promise.resolve(reply({ ...review(), sessions: [session(SESSION, true)] }));
+      if (String(url).endsWith('/score-reference'))
+        return Promise.resolve(reply(receipt(false, true)));
+      return original(url, init);
+    });
+    await render();
+    await open();
+    expect(host.textContent).toContain('Active Real Bid');
+    expect(host.textContent).toContain('Recorded selections stay unchanged.');
+    expect(host.textContent).toContain('Bid checkpoint 8');
+    await act(async () => button('Update remaining picks').click());
+    expect(mutationRequests()).toHaveLength(1);
+    expect(JSON.parse(String(mutationRequests()[0]?.[1]?.body))).toEqual({
+      archiveSha256: ARCHIVE,
+      expectedSnapshotSha256: SNAPSHOT,
+      expectedVersionSha256: VERSION,
+      expectedCanonicalSeq: 8,
+      expectedCanonicalStateSha256: STATE,
+    });
+    expect(host.textContent).toContain(
+      'Remaining-pick priorities updated. Recorded selections are preserved.',
+    );
+    expect(button('Update remaining picks').disabled).toBe(true);
+  });
+
+  it.each([
+    'missing-sequence',
+    'missing-state',
+    'negative-sequence',
+    'prepared-with-checkpoint',
+  ] as const)('rejects %s checkpoint metadata', async (kind) => {
+    const active = session(SESSION, true);
+    if (kind === 'missing-sequence') active.expectedCanonicalSeq = null;
+    if (kind === 'missing-state') active.expectedCanonicalStateSha256 = null;
+    if (kind === 'negative-sequence') active.expectedCanonicalSeq = -1;
+    if (kind === 'prepared-with-checkpoint') active.phase = 'config';
+    fetcher.mockResolvedValue(reply({ ...review(), sessions: [active] }));
+    await render();
+    await open();
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    expect(button('Apply final priorities').disabled).toBe(true);
+    expect(mutationRequests()).toHaveLength(0);
+  });
+
+  it.each(['missing-checkpoint', 'wrong-sequence', 'wrong-state', 'wrong-phase'] as const)(
+    'rejects an active receipt with %s',
+    async (kind) => {
+      const original = defaultImplementation();
+      const checkpoint = receipt(false, true).activeCheckpoint;
+      fetcher.mockImplementation((url, init) => {
+        if (String(url).endsWith('/score-review'))
+          return Promise.resolve(reply({ ...review(), sessions: [session(SESSION, true)] }));
+        if (String(url).endsWith('/score-reference'))
+          return Promise.resolve(
+            reply({
+              ...receipt(),
+              ...(kind === 'missing-checkpoint'
+                ? {}
+                : {
+                    activeCheckpoint: {
+                      ...checkpoint,
+                      canonicalSeq: kind === 'wrong-sequence' ? 9 : 8,
+                      canonicalStateSha256: kind === 'wrong-state' ? 'f'.repeat(64) : STATE,
+                      phase: kind === 'wrong-phase' ? 'config' : 'position_bid',
+                    },
+                  }),
+            }),
+          );
+        return original(url, init);
+      });
+      await render();
+      await open();
+      await act(async () => button('Update remaining picks').click());
+      expect(host.textContent).toContain('The priority receipt could not be verified.');
+      expect(host.textContent).not.toContain('Remaining-pick priorities updated.');
+      expect(button('Update remaining picks').disabled).toBe(true);
+    },
+  );
+
+  it('rejects an active checkpoint receipt for a prepared bid', async () => {
+    const original = defaultImplementation();
+    fetcher.mockImplementation((url, init) =>
+      String(url).endsWith('/score-reference')
+        ? Promise.resolve(reply(receipt(false, true)))
+        : original(url, init),
+    );
+    await render();
+    await open();
+    await act(async () => button('Apply final priorities').click());
+    expect(host.textContent).toContain('The priority receipt could not be verified.');
+    expect(button('Apply final priorities').disabled).toBe(true);
+  });
+
+  it('invalidates an active checkpoint after409 and only retries from fresh review', async () => {
+    const original = defaultImplementation();
+    let checkpointSeq = 8;
+    let checkpointState = STATE;
+    let conflict = true;
+    fetcher.mockImplementation((url, init) => {
+      if (String(url).endsWith('/score-review'))
+        return Promise.resolve(
+          reply({
+            ...review(),
+            sessions: [
+              {
+                ...session(SESSION, true),
+                expectedCanonicalSeq: checkpointSeq,
+                expectedCanonicalStateSha256: checkpointState,
+              },
+            ],
+          }),
+        );
+      if (String(url).endsWith('/score-reference'))
+        return Promise.resolve(
+          conflict
+            ? reply({ error: 'canonical_checkpoint_changed' }, 409)
+            : reply({
+                ...receipt(),
+                activeCheckpoint: {
+                  canonicalSeq: checkpointSeq,
+                  canonicalStateSha256: checkpointState,
+                  phase: 'position_bid',
+                },
+              }),
+        );
+      return original(url, init);
+    });
+    await render();
+    await open();
+    await act(async () => button('Update remaining picks').click());
+    expect(host.textContent).not.toContain('Bid checkpoint 8');
+    expect(host.querySelector('a')).toBeNull();
+    await act(async () => button('Apply final priorities').click());
+    expect(mutationRequests()).toHaveLength(1);
+    conflict = false;
+    checkpointSeq = 9;
+    checkpointState = 'f'.repeat(64);
+    await act(async () => button('Reload priorities').click());
+    expect(host.textContent).toContain('Bid checkpoint 9');
+    await act(async () => button('Update remaining picks').click());
+    const request = JSON.parse(String(mutationRequests()[1]?.[1]?.body));
+    expect(request.expectedCanonicalSeq).toBe(9);
+    expect(request.expectedCanonicalStateSha256).toBe('f'.repeat(64));
+    expect(host.textContent).toContain('Recorded selections are preserved.');
+  });
+
+  it('blocks cached apply while reloading metadata', async () => {
+    const pending = deferred<Response>();
+    const original = defaultImplementation();
+    await render();
+    await open();
+    fetcher.mockImplementation((url, init) =>
+      String(url).endsWith('/score-review') ? pending.promise : original(url, init),
+    );
+    await act(async () => {
+      const apply = button('Apply final priorities');
+      button('Reload priorities').click();
+      apply.click();
+    });
+    expect(mutationRequests()).toHaveLength(0);
+    expect(button('Apply final priorities').disabled).toBe(true);
+    await act(async () => pending.resolve(reply(review())));
+    expect(button('Apply final priorities').disabled).toBe(false);
   });
 
   it('blocks double-clicks synchronously and handles an idempotent response', async () => {
@@ -320,5 +503,30 @@ describe('final specialty source priorities', () => {
     await act(async () => pending.resolve(reply(receipt())));
     expect(host.textContent).not.toContain('Final priorities applied ·');
     expect(host.querySelector('a')).toBeNull();
+  });
+
+  it('ignores an old-year conflict without blocking a freshly reviewed new year', async () => {
+    const pending = deferred<Response>();
+    const original = defaultImplementation();
+    fetcher.mockImplementation((url, init) => {
+      if (String(url).includes('/2026/') && String(url).endsWith('/score-reference'))
+        return pending.promise;
+      if (String(url).includes('/2027/') && String(url).endsWith('/score-review'))
+        return Promise.resolve(reply(review(2027)));
+      return original(url, init);
+    });
+    await render();
+    await open();
+    await act(async () => button('Apply final priorities').click());
+    await render(2027);
+    await act(async () => pending.resolve(reply({ error: 'stale' }, 409)));
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(button('Apply final priorities').disabled).toBe(false);
+    await act(async () => button('Apply final priorities').click());
+    expect(mutationRequests()).toHaveLength(2);
+    expect(mutationRequests()[1]?.[0]).toBe(
+      '/api/admin/bid-forms/2027/sessions/prepared-real/score-reference',
+    );
+    expect(host.textContent).toContain('Final priorities applied ·');
   });
 });

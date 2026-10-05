@@ -21,6 +21,7 @@ import {
   applyRankSource,
   buildRankSourceMembers,
   createRankSourceReceipt,
+  loadActiveRankCheckpoint,
   loadSessionRankSource,
   rankSourceKey,
 } from '../../lib/bid-rank-source.js';
@@ -98,29 +99,43 @@ router.get('/:year/score-review', async (c) => {
       id: string;
       snapshotSha256: string;
       versionSha256: string;
-    }>(sql`SELECT s.id,p.snapshot_sha256 AS snapshotSha256,p.bid_version_sha256 AS versionSha256
+      phase: 'config' | 'position_bid';
+    }>(sql`SELECT s.id,s.current_phase AS phase,
+      p.snapshot_sha256 AS snapshotSha256,p.bid_version_sha256 AS versionSha256
       FROM bid_sessions s JOIN bid_session_policy_snapshots p ON p.bid_session_id=s.id
-      WHERE s.bid_year=${year} AND s.is_mock=0 AND s.current_phase='config'
+      WHERE s.bid_year=${year} AND s.is_mock=0 AND s.current_phase IN ('config','position_bid')
+      AND s.frozen_at IS NULL
       AND p.snapshot_sha256 IS NOT NULL AND p.bid_version_sha256 IS NOT NULL
-      AND NOT EXISTS(SELECT 1 FROM canonical_bid_session_state c WHERE c.bid_session_id=s.id)
-      AND NOT EXISTS(SELECT 1 FROM bid_order o WHERE o.bid_session_id=s.id)
-      AND NOT EXISTS(SELECT 1 FROM bids b WHERE b.bid_session_id=s.id)
+      AND ((s.current_phase='config'
+        AND NOT EXISTS(SELECT 1 FROM canonical_bid_session_state c WHERE c.bid_session_id=s.id)
+        AND NOT EXISTS(SELECT 1 FROM bid_order o WHERE o.bid_session_id=s.id)
+        AND NOT EXISTS(SELECT 1 FROM bids b WHERE b.bid_session_id=s.id)
+        AND NOT EXISTS(SELECT 1 FROM bid_command_receipts r WHERE r.bid_session_id=s.id))
+      OR (s.current_phase='position_bid'
+        AND EXISTS(SELECT 1 FROM canonical_bid_session_state c WHERE c.bid_session_id=s.id)))
       ORDER BY s.id`);
     const sessions = [];
     for (const candidate of candidates) {
       const loaded = await loadBidSessionPolicySnapshot(db, candidate.id);
       if (!loaded.snapshot || loaded.snapshot.v !== 3)
         throw new Error('rank_source_snapshot_invalid');
+      const active =
+        candidate.phase === 'position_bid'
+          ? await loadActiveRankCheckpoint(c.env.DB, candidate.id)
+          : null;
+      if (active && !active.ok) continue;
       const existing = await loadSessionRankSource(db, candidate.id);
       sessions.push({
         id: candidate.id,
         isMock: false,
-        phase: 'config',
+        phase: candidate.phase,
         alreadyApplied:
           existing?.record.archiveSha256 === stored?.receipt.sha256 && existing !== null,
         sourceReceiptSha256: existing?.sha256 ?? null,
         expectedSnapshotSha256: candidate.snapshotSha256,
         expectedVersionSha256: candidate.versionSha256,
+        expectedCanonicalSeq: active?.ok ? active.checkpoint.canonicalSeq : null,
+        expectedCanonicalStateSha256: active?.ok ? active.checkpoint.canonicalStateSha256 : null,
       });
     }
     return c.json({
@@ -134,8 +149,8 @@ router.get('/:year/score-review', async (c) => {
   }
 });
 
-/** Pre-start scoring derivation under the same durable lease used by Start.
- * Immutable receipt + audit commit together; the base snapshot is never edited. */
+/** Scoring-only derivation under the normal mutation lease. Active updates pin
+ * exact progress; immutable receipt + audit commit without editing progress. */
 router.post(
   '/:year/sessions/:id/score-reference',
   bodyLimit({
@@ -168,6 +183,9 @@ router.post(
           0,
         ),
         alreadyApplied,
+        ...(receipt.record.activeCheckpoint
+          ? { activeCheckpoint: receipt.record.activeCheckpoint }
+          : {}),
       };
     };
     try {
@@ -179,30 +197,47 @@ router.post(
           versionId: string;
           versionSha256: string;
           snapshotSha256: string;
-        }>(sql`SELECT s.bid_year AS year,s.is_mock AS isMock,s.current_phase AS phase,p.bid_version_id AS versionId,
+          currentBidderId: number | null;
+          frozenAt: number | null;
+        }>(sql`SELECT s.bid_year AS year,s.is_mock AS isMock,s.current_phase AS phase,
+          s.current_bidder_id AS currentBidderId,s.frozen_at AS frozenAt,p.bid_version_id AS versionId,
         p.bid_version_sha256 AS versionSha256,p.snapshot_sha256 AS snapshotSha256
         FROM bid_sessions s JOIN bid_session_policy_snapshots p ON p.bid_session_id=s.id WHERE s.id=${sessionId}`);
         if (!pin) return c.json({ error: 'bid_session_not_found' }, 404);
-        if (pin.isMock !== 0) return c.json({ error: 'rank_source_prepared_real_only' }, 409);
+        if (pin.isMock !== 0) return c.json({ error: 'rank_source_real_only' }, 409);
         if (
           pin.year !== year ||
           pin.snapshotSha256 !== body.expectedSnapshotSha256 ||
           pin.versionSha256 !== body.expectedVersionSha256
         )
           return c.json({ error: 'rank_source_changed_reload_before_applying' }, 409);
-        const existing = await loadSessionRankSource(db, sessionId);
-        if (existing?.record.archiveSha256 === body.archiveSha256)
-          return c.json(responseFor(existing, true));
+        if (pin.frozenAt !== null || (pin.phase !== 'config' && pin.phase !== 'position_bid'))
+          return c.json({ error: 'rank_source_requires_prepared_or_active_bid' }, 409);
+        const active =
+          pin.phase === 'position_bid' ? await loadActiveRankCheckpoint(c.env.DB, sessionId) : null;
+        if (active && !active.ok) return c.json({ error: active.error }, 409);
+        if (active?.ok) {
+          if (
+            body.expectedCanonicalSeq !== active.checkpoint.canonicalSeq ||
+            body.expectedCanonicalStateSha256 !== active.checkpoint.canonicalStateSha256
+          )
+            return c.json({ error: 'rank_source_checkpoint_changed_reload_before_applying' }, 409);
+        } else if (body.expectedCanonicalSeq !== undefined) {
+          return c.json({ error: 'rank_source_checkpoint_changed_reload_before_applying' }, 409);
+        }
         const clean = await db.get<{ clear: number }>(sql`SELECT
         (NOT EXISTS(SELECT 1 FROM canonical_bid_session_state WHERE bid_session_id=${sessionId})
         AND NOT EXISTS(SELECT 1 FROM bid_order WHERE bid_session_id=${sessionId})
         AND NOT EXISTS(SELECT 1 FROM bids WHERE bid_session_id=${sessionId})
         AND NOT EXISTS(SELECT 1 FROM bid_command_receipts WHERE bid_session_id=${sessionId})) AS clear`);
-        if (pin.phase !== 'config' || clean?.clear !== 1)
+        if (pin.phase === 'config' && clean?.clear !== 1)
           return c.json({ error: 'rank_source_requires_unstarted_bid' }, 409);
         const source = await readReceipt(c.env, year);
         if (!source || source.receipt.sha256 !== body.archiveSha256)
           return c.json({ error: 'rank_source_changed_reload_before_applying' }, 409);
+        const existing = await loadSessionRankSource(db, sessionId);
+        if (existing?.record.archiveSha256 === body.archiveSha256)
+          return c.json(responseFor(existing, true));
         const loaded = await loadBidSessionPolicySnapshot(db, sessionId);
         if (!loaded.snapshot || loaded.snapshot.v !== 3)
           return c.json({ error: 'rank_source_snapshot_invalid' }, 409);
@@ -216,26 +251,50 @@ router.post(
           archiveSha256: source.receipt.sha256,
           appliedBy: String(c.get('claims').sub),
           appliedAt,
+          ...(active?.ok ? { activeCheckpoint: active.checkpoint } : {}),
           members: buildRankSourceMembers(loaded.snapshot, source.receipt.archive),
         });
         applyRankSource(loaded.snapshot, receipt);
-        const condition = {
-          sql: `EXISTS(SELECT 1 FROM bid_sessions s JOIN bid_session_policy_snapshots p ON p.bid_session_id=s.id
-          WHERE s.id=? AND s.is_mock=0 AND s.current_phase='config' AND p.snapshot_sha256=? AND p.bid_version_sha256=?)
+        const condition = active?.ok
+          ? {
+              sql: `EXISTS(SELECT 1 FROM bid_sessions s JOIN bid_session_policy_snapshots p ON p.bid_session_id=s.id
+            JOIN canonical_bid_session_state c ON c.bid_session_id=s.id
+            WHERE s.id=? AND s.bid_year=? AND s.is_mock=0 AND s.current_phase='position_bid'
+              AND s.frozen_at IS NULL AND s.current_bidder_id IS ?
+              AND p.snapshot_sha256=? AND p.bid_version_sha256=?
+              AND c.current_seq=? AND c.state_json=?
+              AND json_extract(c.state_json,'$.currentPhase')='position_bid'
+              AND json_extract(c.state_json,'$.frozenAt') IS NULL
+              AND (json_type(c.state_json,'$.live.specialty') IS NULL
+                OR json_type(c.state_json,'$.live.specialty')='null'))`,
+              parameters: [
+                sessionId,
+                year,
+                pin.currentBidderId,
+                pin.snapshotSha256,
+                pin.versionSha256,
+                active.checkpoint.canonicalSeq,
+                active.stateJson,
+              ],
+            }
+          : {
+              sql: `EXISTS(SELECT 1 FROM bid_sessions s JOIN bid_session_policy_snapshots p ON p.bid_session_id=s.id
+          WHERE s.id=? AND s.is_mock=0 AND s.current_phase='config' AND s.frozen_at IS NULL
+            AND p.snapshot_sha256=? AND p.bid_version_sha256=?)
           AND NOT EXISTS(SELECT 1 FROM canonical_bid_session_state WHERE bid_session_id=?)
           AND NOT EXISTS(SELECT 1 FROM bid_order WHERE bid_session_id=?)
           AND NOT EXISTS(SELECT 1 FROM bids WHERE bid_session_id=?)
           AND NOT EXISTS(SELECT 1 FROM bid_command_receipts WHERE bid_session_id=?)`,
-          parameters: [
-            sessionId,
-            pin.snapshotSha256,
-            pin.versionSha256,
-            sessionId,
-            sessionId,
-            sessionId,
-            sessionId,
-          ],
-        };
+              parameters: [
+                sessionId,
+                pin.snapshotSha256,
+                pin.versionSha256,
+                sessionId,
+                sessionId,
+                sessionId,
+                sessionId,
+              ],
+            };
         const results = await c.env.DB.batch([
           c.env.DB.prepare(`INSERT INTO admin_configuration_receipts
           (idempotency_key,actor_subject,operation,request_json,response_json,created_at) VALUES(?,?,?,?,?,?)`).bind(

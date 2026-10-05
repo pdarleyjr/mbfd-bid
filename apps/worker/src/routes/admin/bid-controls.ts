@@ -691,6 +691,7 @@ router.get('/:id/specialty-live', async (c) => {
   return c.json({
     bid_session_id: sessionId,
     sequence: canonical.lastSeq,
+    scoreReceiptSha256: frozen.snapshot.scoreReferenceSource?.receiptSha256 ?? null,
     admin_override_allowed: isLiveBidActionAuthorized(policy, 'force', c.get('claims').member_id),
     specialty_review_position_ids: [
       ...new Set([
@@ -897,6 +898,7 @@ router.post('/:id/commands/live/preview', requireStepUpAuth(), async (c) => {
   return c.json({
     valid: true,
     expectedSeq: state.lastSeq,
+    scoreReceiptSha256: preview.scoreReceiptSha256 ?? null,
     warnings: override?.warnings ?? [],
     memberId: event.memberId,
     positionId: event.positionId ?? null,
@@ -917,7 +919,9 @@ router.post('/:id/commands/live/preview', requireStepUpAuth(), async (c) => {
       'Frozen session identity',
       'Canonical sequence and available seat',
       'Explicit administrator override review',
-      ...(command.data.type === 'live.correct_bid' ? ['Source award receipt lineage'] : []),
+      ...(command.data.type === 'live.correct_bid' || event.operation === 'correct_bid'
+        ? ['Source award receipt lineage']
+        : []),
     ],
   });
 });
