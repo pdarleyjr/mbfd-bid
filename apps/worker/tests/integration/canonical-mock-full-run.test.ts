@@ -196,6 +196,7 @@ describe('canonical managed Mock from Save through verified completion', () => {
     expect(coverageResponse.status, await coverageResponse.clone().text()).toBe(200);
     const coverage = (await coverageResponse.json()) as Record<string, unknown>;
     expect(coverage.opportunity_pools).toMatchObject([{ resolvedPositionId: mockSeats.pool[0] }]);
+    expect(coverage.admin_override_position_ids).toEqual(expect.arrayContaining(mockSeats.pool));
     expect(coverage.specialty_coverage, JSON.stringify(coverage.specialty_coverage)).toMatchObject({
       availability: 'AVAILABLE',
       status: 'FEASIBLE',

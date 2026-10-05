@@ -148,9 +148,8 @@ export function AdministratorOverride(props: Props) {
   );
   const termRight =
     draft.memberId === null ? undefined : props.termParticipation?.[String(draft.memberId)];
-  const selectedPool = props.opportunityPools?.find(
-    (pool) =>
-      pool.resolvedPositionId === draft.positionId && pool.positionIds.includes(draft.positionId),
+  const selectedPool = props.opportunityPools?.find((pool) =>
+    pool.positionIds.includes(draft.positionId),
   );
   const positionOptions = props.positions.filter(
     (position) =>

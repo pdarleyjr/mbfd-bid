@@ -707,13 +707,7 @@ router.get('/:id/specialty-live', async (c) => {
       .map((person) => person.memberId),
     admin_override_position_ids: [
       ...new Set(policy.stages.flatMap((stage) => stage.opportunityPositionIds)),
-    ].filter(
-      (id) =>
-        canonical.fills[id] === undefined &&
-        !opportunityPools.some(
-          (pool) => pool.positionIds.includes(id) && pool.resolvedPositionId !== id,
-        ),
-    ),
+    ].filter((id) => canonical.fills[id] === undefined),
     current_phase: canonical.currentPhase,
     finalization_ready: canonical.annual?.completion != null,
     membership_distributions: policy.annualOperations?.membershipDistributions ?? [],

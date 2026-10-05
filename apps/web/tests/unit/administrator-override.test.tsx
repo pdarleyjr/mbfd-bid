@@ -308,6 +308,44 @@ describe('audited administrator override', () => {
       pool: { poolId: 'synthetic-combat-float' },
     });
   });
+  it('reviews an exact later pool slot with its pool ID and no required note or A-Day', async () => {
+    const first = positions.find((position) => position.id === 'C103');
+    if (!first) throw new Error('Missing pool position fixture');
+    const later = { ...first, id: 'C104' };
+    props = {
+      ...props,
+      positions: [...positions, later],
+      positionIds: [...props.positionIds, later.id],
+      opportunityPools: [
+        {
+          id: 'synthetic-combat-float',
+          positionIds: ['C103', later.id],
+          resolvedPositionId: 'C103',
+        },
+      ],
+    };
+    await mount();
+    await draftAward('19', later.id);
+    await input('Note (optional)', '');
+    await settle(() =>
+      (container.querySelector('input[aria-label="Pick A-Day later"]') as HTMLInputElement).click(),
+    );
+    await reviewAndAcknowledge();
+    expect(previews[0]).toMatchObject({
+      positionId: later.id,
+      pool: { poolId: 'synthetic-combat-float' },
+      reason: '',
+    });
+    expect(previews[0]?.aDay).toBeUndefined();
+    await settle(() => button('Confirm administrator selection').click());
+    expect(commands[0]).toMatchObject({
+      positionId: later.id,
+      pool: { poolId: 'synthetic-combat-float' },
+      reason: '',
+      adminOverride: { acknowledged: true },
+    });
+    expect(commands[0]?.aDay).toBeUndefined();
+  });
   it('permits a pending A-Day member to be skipped without requiring a correction', async () => {
     props = { ...props, fills: { A101: { member_id: 17 } } };
     await mount();
