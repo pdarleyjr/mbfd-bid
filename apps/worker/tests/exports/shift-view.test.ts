@@ -267,6 +267,74 @@ describe('Shift View station-board exports', () => {
     }
   });
 
+  it('keeps two-digit division counts together in wide merged cells beside their labels', () => {
+    const roster = buildShiftRoster(shiftExportFixture());
+    const shift = required(roster.shifts[0]);
+    const baseRow = required(shift.stations[0]?.rows[0]);
+    const stationNames = [
+      'Station #1',
+      'Station #2',
+      'Station #3',
+      'Station #4',
+      'Station #6',
+      'Combat Float Pool',
+    ];
+    shift.stations = stationNames.map((station) => ({ station, rows: [] }));
+    for (let index = 0; index < 74; index++) {
+      required(shift.stations[index % stationNames.length]).rows.push({
+        ...baseRow,
+        positionId: `A${100 + index}`,
+        unit: 'Engine 2',
+        rank: 'FF',
+        member: 'Layout fixture member',
+        division: index < 44 ? 'Combat' : 'Rescue',
+        isFloating: false,
+      });
+    }
+    shift.positions = 74;
+    shift.selected = 74;
+    shift.available = 0;
+    const sheet = required(shiftViewWorkbookSheets(roster)[0]);
+    const cellAt = (row: number, column: number) => {
+      const value = sheet.data[row]?.[column];
+      if (!value || typeof value !== 'object' || !('value' in value))
+        throw new Error('expected styled cell');
+      return value;
+    };
+    const summaryRow = sheet.data.findIndex((row) =>
+      row.some(
+        (cell) => cell && typeof cell === 'object' && 'value' in cell && cell.value === 'DIVISION',
+      ),
+    );
+    const summaryColumn = required(sheet.data[summaryRow]).findIndex(
+      (cell) => cell && typeof cell === 'object' && 'value' in cell && cell.value === 'DIVISION',
+    );
+    expect(summaryColumn % 7).toBe(0);
+    for (const [index, [value, label]] of [
+      ['44', 'Combat'],
+      ['30', 'Rescue'],
+      ['0', 'Other'],
+      ['74', 'Total shift'],
+    ].entries()) {
+      expect(cellAt(summaryRow + index + 1, summaryColumn)).toMatchObject({
+        value,
+        columnSpan: 2,
+        wrap: false,
+        align: 'center',
+      });
+      expect(cellAt(summaryRow + index + 1, summaryColumn + 2)).toMatchObject({
+        value: label,
+        columnSpan: 4,
+      });
+    }
+    const totalRow = sheet.data.findIndex(
+      (row) =>
+        row[0] && typeof row[0] === 'object' && 'value' in row[0] && row[0].value === 'Total',
+    );
+    expect(cellAt(totalRow, 2)).toMatchObject({ value: '13', wrap: false });
+    expect(sheet.columns[2]?.width).toBeGreaterThanOrEqual(3);
+  });
+
   it('uses Tabloid paper, one-page scaling and an exact used-cell print area', () => {
     const sheets = shiftViewWorkbookSheets(buildShiftRoster(shiftExportFixture()));
     const feature = shiftViewPrintFeature(sheets);

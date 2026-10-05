@@ -128,6 +128,7 @@ export function shiftViewWorkbookSheets(roster: ShiftRoster) {
               start + 2,
               cell(shiftViewOccupied(row) ? 1 : '', {
                 ...style,
+                wrap: false,
                 textColor: '#CC0000',
                 align: 'center',
               }),
@@ -150,6 +151,7 @@ export function shiftViewWorkbookSheets(roster: ShiftRoster) {
           start + 2,
           cell(block.rows.filter(shiftViewOccupied).length, {
             ...totalStyle,
+            wrap: false,
             textColor: '#CC0000',
             align: 'center',
           }),
@@ -166,7 +168,9 @@ export function shiftViewWorkbookSheets(roster: ShiftRoster) {
     const summaryStart = Math.max(4, ...ends) + 1;
     const summaries = shiftViewSummaries(shift);
     const summariesPerRow = Math.min(summaries.length, Math.max(1, Math.floor(width / 7)));
-    const summaryWidth = Math.floor(width / summariesPerRow);
+    // Align summary groups to the station stride. Otherwise a value can land in
+    // the narrow seat-count column and wrap a two-digit total into two lines.
+    const summaryWidth = Math.min(7, width);
     for (const [index, summary] of summaries.entries()) {
       const start = (index % summariesPerRow) * summaryWidth;
       const top = summaryStart + Math.floor(index / summariesPerRow) * 7;
@@ -188,8 +192,9 @@ export function shiftViewWorkbookSheets(roster: ShiftRoster) {
           row,
           start,
           cell(value, {
-            height: 22,
-            wrap: true,
+            columnSpan: 2,
+            height: typeof value === 'number' ? 22 : 30,
+            wrap: typeof value !== 'number',
             align: 'center',
             textColor: '#CC0000',
             backgroundColor: '#FFFF00',
@@ -198,9 +203,9 @@ export function shiftViewWorkbookSheets(roster: ShiftRoster) {
         );
         put(
           row,
-          start + 1,
+          start + 2,
           cell(label, {
-            columnSpan: summaryWidth - 2,
+            columnSpan: summaryWidth - 3,
             height: 22,
             wrap: true,
             fontWeight: 'bold',
@@ -236,7 +241,7 @@ export function shiftViewWorkbookSheets(roster: ShiftRoster) {
     // Each worksheet has the exact used width, without a trailing spacer column.
     const widths = Array.from(
       { length: width },
-      (_, index) => [3, 6, 2, 16, 19, 5, 1][index % 7] ?? 1,
+      (_, index) => [3, 6, 3, 16, 19, 5, 1][index % 7] ?? 1,
     );
     return {
       sheet: shiftLabel(shift.shift),
