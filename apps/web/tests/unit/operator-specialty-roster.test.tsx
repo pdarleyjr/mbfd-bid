@@ -99,6 +99,31 @@ function roster(): OperatorSpecialtyRoster {
         rankingAvailable: false,
         dataBlockedMemberIds: [],
       },
+      {
+        id: 'trt-certificates',
+        label: 'TRT · Operations certificates',
+        certificateInventory: {
+          credentialNames: [
+            'Hazardous Materials Operations',
+            'Rope Rescue Operations',
+            'Vehicle & Machinery Rescue Operations',
+            'Confined Space Operations',
+            'Structural Collapse Operations',
+            'Trench Rescue Operations',
+          ],
+        },
+        positionIds: [],
+        candidates: [
+          { memberId: 3, priority: null, points: null, available: true, eligiblePositionIds: [] },
+          { memberId: 2, priority: null, points: null, available: false, eligiblePositionIds: [] },
+        ],
+        remainingSeatCount: null,
+        eligibleMemberCount: 1,
+        status: null,
+        criticalMemberIds: [],
+        rankingAvailable: false,
+        dataBlockedMemberIds: [],
+      },
     ],
   };
 }
@@ -279,6 +304,75 @@ describe('specialty roster display', () => {
     expect(member?.textContent).toContain('Qualified pool');
     expect(member?.textContent).not.toContain('points');
     expect(member?.getAttribute('data-priority')).toBe('unavailable');
+  });
+  it('labels the TRT certificate inventory without claiming priority, seat capacity or membership and keeps filters and details usable', async () => {
+    await mount(<Workspace />);
+    await clickText('Specialty');
+    await setSelect('Specialty roster', 'trt-certificates');
+    expect(host.textContent).toContain('Certificate inventory · 1 remaining');
+    expect(host.textContent).toContain(
+      'Six Operations certificates on record. Eligibility is checked on selection.',
+    );
+    const member = host.querySelector('[data-testid="operator-member-specialty-3"]');
+    expect(member?.textContent).toContain('Operations certificates');
+    expect(member?.textContent).not.toMatch(/Qualified pool|points|TRT membership/);
+    expect(member?.getAttribute('data-priority')).toBe('unavailable');
+    const summary = [...host.querySelectorAll('p')].find((node) =>
+      node.textContent?.includes('Certificate inventory'),
+    );
+    expect(summary?.textContent).not.toMatch(/Priority|open seats/);
+    expect(host.querySelector('option[value="all"]')?.textContent).toBe('All certificate holders');
+    await setSelect('Specialty member status', 'taken');
+    expect(specialtyMemberIds()).toEqual(['operator-member-specialty-2']);
+    await act(() =>
+      (
+        host.querySelector('[data-testid="operator-member-specialty-2"]') as HTMLButtonElement
+      ).click(),
+    );
+    expect(host.querySelector('[aria-label="Selected member details"]')?.textContent).toBe(
+      'Member2',
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('starts with a useful fresh specialty group instead of the first empty list and preserves an explicit empty-list choice', async () => {
+    const projection = roster();
+    const empty = {
+      ...projection.groups[0],
+      id: 'empty-investigator',
+      label: 'Fire Investigator preference',
+      positionIds: ['A303'],
+      candidates: [],
+      remainingSeatCount: 0,
+      eligibleMemberCount: 0,
+    } as OperatorSpecialtyRoster['groups'][number];
+    projection.groups = [empty, ...projection.groups];
+    await mount(<Workspace minimumSequence={4} />, projection);
+    await clickText('Specialty');
+    const selector = host.querySelector(
+      'select[aria-label="Specialty roster"]',
+    ) as HTMLSelectElement | null;
+    expect(selector?.value).toBe('driver');
+    expect(specialtyMemberIds()).toEqual([
+      'operator-member-specialty-3',
+      'operator-member-specialty-1',
+    ]);
+    await setSelect('Specialty roster', 'empty-investigator');
+    expect(selector?.value).toBe('empty-investigator');
+    expect(specialtyMemberIds()).toEqual([]);
+  });
+  it('falls back to a fresh inventory with remaining certificate holders when no group has open seats', async () => {
+    const projection = roster();
+    projection.groups = projection.groups
+      .filter((group) => group.id === 'driver' || group.id === 'trt-certificates')
+      .map((group) =>
+        group.id === 'driver' ? { ...group, remainingSeatCount: 0, eligibleMemberCount: 0 } : group,
+      );
+    await mount(<Workspace />, projection);
+    await clickText('Specialty');
+    expect(
+      (host.querySelector('select[aria-label="Specialty roster"]') as HTMLSelectElement | null)
+        ?.value,
+    ).toBe('trt-certificates');
   });
   it('does not show a previous session specialty projection', async () => {
     await mount(<Workspace />, { ...roster(), sessionId: 'other-session' });

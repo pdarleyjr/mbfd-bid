@@ -37,11 +37,13 @@ import { refreshFederatedSession } from '../lib/federated-session.js';
 import { projectFrozenNonBidAssignments } from '../lib/frozen-nonbid-assignments.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
 import { verifyJwt } from '../lib/jwt.js';
+import { activeLivePositionIds, withdrawnLivePositionIds } from '../lib/live-bid-opportunities.js';
 import { computeFrozenStageOrder } from '../lib/live-bid-policy.js';
 import { withLocalMemberIdentity } from '../lib/local-member-identity.js';
 import { DEFAULT_ON_DECK_COUNT, computeOnDeck, currentBidOrderEntry } from '../lib/on-deck.js';
 import { operationalDate } from '../lib/operational-date.js';
 import type { TransitionRosterEntry } from '../lib/post-bid-transition.js';
+import { projectPresentationADays } from '../lib/presentation-a-day.js';
 import type { WorkerEnv } from '../types/env.js';
 
 type BidContext = Context<{ Bindings: WorkerEnv }>;
@@ -209,9 +211,20 @@ bid.get('/presentation', async (c) => {
           rank: identity.rank,
         };
   };
+  const displayedLive = {
+    completedStageIds: held
+      ? (held.completedStageIds ?? [])
+      : (canonical.live?.completedStageIds ?? []),
+    withdrawnPositionIds: held
+      ? (held.withdrawnPositionIds ?? [])
+      : (canonical.live?.withdrawnPositionIds ?? []),
+  };
   const biddablePositionIds = new Set(
     frozen.snapshot.v === 3
-      ? frozen.snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId)
+      ? activeLivePositionIds(
+          { live: displayedLive },
+          frozen.snapshot.ruleBookMaterial.rules.map((rule) => rule.positionId),
+        )
       : [],
   );
   const positions =
@@ -245,6 +258,7 @@ bid.get('/presentation', async (c) => {
       currentPhase,
       aDay: held ? (held.aDay ?? null) : canonical.aDay,
       live: {
+        completedStageIds: displayedLive.completedStageIds,
         dispositions: held ? (held.dispositions ?? []) : (canonical.live?.dispositions ?? []),
         exceptionalAssignments: held
           ? (held.exceptionalAssignments ?? [])
@@ -342,6 +356,15 @@ bid.get('/presentation', async (c) => {
     paused: currentPhase === 'paused',
     complete: currentPhase === 'complete',
     progress: { filled: Object.keys(fills).length, total: positions.length },
+    a_day: projectPresentationADays({
+      snapshot: frozen.snapshot,
+      fills,
+      aDay: held ? (held.aDay ?? null) : canonical.aDay,
+      sequence: held ? (presentation.heldAtSeq ?? canonical.lastSeq) : canonical.lastSeq,
+      pendingMemberIds: ordinaryQueue
+        .filter((entry) => entry.pendingADay)
+        .map((entry) => entry.memberId),
+    }),
     positions: displayedPositions.map((position) => ({
       id: position.id,
       shift: position.shift,
@@ -503,7 +526,15 @@ bid.get('/me/eligibility', async (c) => {
     for (const row of rows) filled.add(row.positionId);
   }
 
-  const positions = evaluateFrozenOpenPositionEligibility(frozenPolicy, claims.member_id, filled);
+  const unavailablePositionIds = new Set([
+    ...filled,
+    ...withdrawnLivePositionIds({ live: canonicalState?.live ?? null }),
+  ]);
+  const positions = evaluateFrozenOpenPositionEligibility(
+    frozenPolicy,
+    claims.member_id,
+    unavailablePositionIds,
+  );
   if (positions === null) {
     return c.json(
       {
@@ -623,6 +654,7 @@ bid.get('/board', async (c) => {
     body.aDay = canonicalState.aDay;
     // This is a read model only. All mutations still cross canonical commands.
     body.annual = canonicalState.annual;
+    if (claims.role === 'admin') body.live = canonicalState.live;
   }
 
   // Merge D1-committed bids into the fills map. Auto-bid / admin bid-for-
@@ -759,6 +791,7 @@ bid.get('/board', async (c) => {
           {
             ...canonicalState,
             live: {
+              completedStageIds: canonicalState.live?.completedStageIds ?? [],
               dispositions: canonicalState.live?.dispositions ?? [],
               exceptionalAssignments: canonicalState.live?.exceptionalAssignments ?? [],
             },
@@ -904,6 +937,12 @@ bid.get('/board', async (c) => {
       : undefined;
 
   const readOnlyAssignments = projectFrozenNonBidAssignments(frozenBoardPolicy.snapshot);
+  const activePositionIds = new Set(
+    activeLivePositionIds(
+      { live: canonicalState?.live ?? null },
+      frozenBoardPolicy.snapshot.ruleBookMaterial.positions.map((position) => position.id),
+    ),
+  );
   return c.json({
     ...body,
     isMock,
@@ -916,10 +955,12 @@ bid.get('/board', async (c) => {
     currentBidder,
     onDeck,
     members,
-    positions: frozenBoardPolicy.snapshot.ruleBookMaterial.positions.map((position) => {
-      const assignment = readOnlyAssignments.get(position.id);
-      return { ...position, ...(assignment ? { readOnlyAssignment: assignment } : {}) };
-    }),
+    positions: frozenBoardPolicy.snapshot.ruleBookMaterial.positions
+      .filter((position) => activePositionIds.has(position.id))
+      .map((position) => {
+        const assignment = readOnlyAssignments.get(position.id);
+        return { ...position, ...(assignment ? { readOnlyAssignment: assignment } : {}) };
+      }),
     advisory,
   });
 });

@@ -8,10 +8,12 @@ import { getSeatAppearance } from '../_components/bid/seat-appearance';
 import styles from './PresentationView.module.css';
 import {
   PRESENTATION_SHIFTS,
+  type PresentationADay,
   type PresentationChiefAssignment,
   type PresentationMember,
   type PresentationPosition,
   type PresentationShift,
+  presentationADayStations,
   presentationBoardPages,
   presentationQueue,
   presentationStations,
@@ -33,6 +35,7 @@ export type Presentation = {
   complete?: boolean;
   progress?: { filled: number; total: number };
   positions?: PresentationPosition[];
+  a_day?: PresentationADay;
   specialty?: { active: true; label: string; position_id: string; status: string } | null;
 };
 
@@ -81,6 +84,7 @@ function assignmentLabel(
 
 function PresentationBoard({ view }: { view: Presentation }) {
   const [shift, setShift] = useState<PresentationShift>('A');
+  const [boardView, setBoardView] = useState<'positions' | 'a-days'>('positions');
   const [boardPage, setBoardPage] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
   const [queueAnchor, setQueueAnchor] = useState(0);
@@ -93,12 +97,34 @@ function PresentationBoard({ view }: { view: Presentation }) {
   const boardSize = useFrameSize(boardRef);
   const queueSize = useFrameSize(queueRef, queueOpen);
   const queue = presentationQueue(view.remaining_queue, view.current_bidder, view.on_deck);
-  const stations = presentationStations(view.positions ?? [], shift, view.exceptional_assignments);
+  const expectedADaySequence =
+    view.mode === 'HOLD' ? (view.held_at_sequence ?? view.sequence) : view.sequence;
+  const aDays =
+    view.a_day &&
+    Number.isSafeInteger(expectedADaySequence) &&
+    view.a_day.sequence === expectedADaySequence
+      ? view.a_day
+      : null;
+  const aDayGroups =
+    aDays?.availability === 'AVAILABLE'
+      ? aDays.groups.filter((group) => group.shift === shift)
+      : [];
+  const pendingADays =
+    aDays?.availability === 'AVAILABLE'
+      ? aDays.pending.filter((member) => member.shift === shift)
+      : [];
+  const stations =
+    boardView === 'a-days'
+      ? aDays
+        ? presentationADayStations(aDays, shift, view.positions ?? [])
+        : []
+      : presentationStations(view.positions ?? [], shift, view.exceptional_assignments);
   const { pages, columns } = presentationBoardPages(
     stations,
     boardSize.width,
     boardSize.height,
     seatHeights.width === boardSize.width ? seatHeights.values : {},
+    boardView === 'a-days' ? 60 : 46,
   );
   const shownPage = Math.min(boardPage, pages.length - 1);
   const stationParts = pages[shownPage] ?? [];
@@ -216,7 +242,13 @@ function PresentationBoard({ view }: { view: Presentation }) {
         <div className={styles.shiftTitle}>
           <h1>{shiftLabel(shift)}</h1>
           <span>
-            {total - filled} available · {filled} taken
+            {boardView === 'a-days'
+              ? aDays?.availability === 'AVAILABLE'
+                ? `${aDayGroups.length} groups · ${pendingADays.length} pending`
+                : aDays === null
+                  ? 'Updating groups'
+                  : 'Groups unavailable'
+              : `${total - filled} available · ${filled} taken`}
           </span>
         </div>
         <button
@@ -243,6 +275,21 @@ function PresentationBoard({ view }: { view: Presentation }) {
             </button>
           ))}
         </div>
+        <fieldset className={styles.viewToggle} aria-label="Presentation view">
+          {(['positions', 'a-days'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={boardView === option}
+              onClick={() => {
+                setBoardView(option);
+                setBoardPage(0);
+              }}
+            >
+              {option === 'positions' ? 'Positions' : 'A-Days'}
+            </button>
+          ))}
+        </fieldset>
         <button
           ref={queueButtonRef}
           type="button"
@@ -258,12 +305,19 @@ function PresentationBoard({ view }: { view: Presentation }) {
         </button>
       </nav>
       <div className={`${styles.workspace} ${queueOpen ? styles.queueIsOpen : ''}`}>
-        <section className={styles.board} aria-label="Station and apparatus board">
-          <h2 className="sr-only">Station and apparatus board</h2>
+        <section
+          className={styles.board}
+          aria-label={boardView === 'a-days' ? 'A-Day groups' : 'Station and apparatus board'}
+        >
+          <h2 className="sr-only">
+            {boardView === 'a-days' ? 'A-Day groups' : 'Station and apparatus board'}
+          </h2>
           <div
             ref={boardRef}
             className={styles.stationGrid}
-            data-testid="presentation-station-board"
+            data-testid={
+              boardView === 'a-days' ? 'presentation-a-day-board' : 'presentation-station-board'
+            }
             style={{ '--station-columns': columns } as CSSProperties}
           >
             {stationParts.map((station) => (
@@ -272,9 +326,25 @@ function PresentationBoard({ view }: { view: Presentation }) {
                 className={styles.station}
                 aria-label={`${station.label}, ${shiftLabel(shift)}`}
               >
-                <header className={styles.stationHeading}>
-                  <h2>{station.label}</h2>
-                  {station.seats.length < station.total ? (
+                <header
+                  className={`${styles.stationHeading} ${boardView === 'a-days' ? styles.aDayHeading : ''}`}
+                >
+                  <h2>
+                    {station.label}
+                    {station.a_day_group?.saved_override ? (
+                      <small className={styles.overrideGroup}> · Saved override</small>
+                    ) : null}
+                  </h2>
+                  {station.a_day_group ? (
+                    <span>
+                      {station.a_day_group.used} taken ·{' '}
+                      {station.a_day_group.remaining === null
+                        ? 'Limit not set'
+                        : `${station.a_day_group.remaining} available`}
+                    </span>
+                  ) : station.a_day_pending ? (
+                    <span>{station.total} awaiting selection</span>
+                  ) : station.seats.length < station.total ? (
                     <span>
                       {station.start + 1}–{station.start + station.seats.length} / {station.total}
                     </span>
@@ -284,6 +354,28 @@ function PresentationBoard({ view }: { view: Presentation }) {
                 </header>
                 <ol className={styles.seats}>
                   {station.seats.map((position) => {
+                    if (position.a_day_capacity) {
+                      const capacity = position.a_day_capacity;
+                      return (
+                        <li
+                          key={position.id}
+                          className={styles.capacityRow}
+                          data-row-key={position.id}
+                          data-testid="presentation-a-day-capacity"
+                          data-capacity-id={capacity.id}
+                        >
+                          <strong>{capacity.label}</strong>
+                          <span>
+                            {capacity.used} taken
+                            <small>
+                              {capacity.remaining === null
+                                ? 'Limit not set'
+                                : `${capacity.remaining} available`}
+                            </small>
+                          </span>
+                        </li>
+                      );
+                    }
                     const appearance = getSeatAppearance({
                       rankRequired: position.rank_required,
                       positionName: position.position_name,
@@ -293,9 +385,18 @@ function PresentationBoard({ view }: { view: Presentation }) {
                       <li
                         key={position.id}
                         className={`${styles.seat} ${position.filled_by ? styles.taken : ''}`}
-                        data-testid="presentation-seat"
+                        data-testid={
+                          boardView === 'a-days' ? 'presentation-a-day-member' : 'presentation-seat'
+                        }
                         data-row-key={position.id}
-                        data-position-id={position.chief_directed ? undefined : position.id}
+                        data-position-id={
+                          boardView === 'positions' && !position.chief_directed
+                            ? position.id
+                            : undefined
+                        }
+                        data-member-id={
+                          boardView === 'a-days' ? position.filled_by?.member_id : undefined
+                        }
                         data-seat-role={appearance.role}
                         style={
                           {
@@ -309,7 +410,9 @@ function PresentationBoard({ view }: { view: Presentation }) {
                           <span className={styles.seatUnit} title={position.unit}>
                             {position.chief_directed
                               ? 'Chief directed'
-                              : `${position.id} · ${position.unit}`}
+                              : boardView === 'a-days'
+                                ? position.unit
+                                : `${position.id} · ${position.unit}`}
                           </span>
                           <strong title={position.position_name}>{position.position_name}</strong>
                         </div>
@@ -336,26 +439,40 @@ function PresentationBoard({ view }: { view: Presentation }) {
               </section>
             ))}
             {stations.length === 0 ? (
-              <p className={styles.emptyBoard}>No seats in this shift.</p>
+              <output className={styles.emptyBoard}>
+                {boardView === 'positions'
+                  ? 'No seats in this shift.'
+                  : aDays === null
+                    ? 'A-Day groups are updating.'
+                    : aDays.availability === 'UNAVAILABLE'
+                      ? 'A-Day groups could not be checked.'
+                      : 'No A-Day groups configured for this shift.'}
+              </output>
             ) : null}
           </div>
           <div className={styles.boardPagination}>
             <button
               type="button"
               className={styles.iconButton}
-              aria-label="Previous seats"
+              aria-label={boardView === 'a-days' ? 'Previous A-Days' : 'Previous seats'}
               disabled={shownPage === 0}
               onClick={() => setBoardPage(shownPage - 1)}
             >
               <ChevronLeft aria-hidden="true" />
             </button>
             <output aria-live="polite">
-              {pages.length > 1 ? `Seats ${shownPage + 1} / ${pages.length}` : 'All seats shown'}
+              {pages.length > 1
+                ? `${boardView === 'a-days' ? 'A-Days' : 'Seats'} ${shownPage + 1} / ${pages.length}`
+                : boardView === 'a-days'
+                  ? aDays?.availability === 'AVAILABLE'
+                    ? 'All A-Day groups shown'
+                    : 'Waiting for A-Day groups'
+                  : 'All seats shown'}
             </output>
             <button
               type="button"
               className={styles.iconButton}
-              aria-label="Next seats"
+              aria-label={boardView === 'a-days' ? 'Next A-Days' : 'Next seats'}
               disabled={shownPage === pages.length - 1}
               onClick={() => setBoardPage(shownPage + 1)}
             >

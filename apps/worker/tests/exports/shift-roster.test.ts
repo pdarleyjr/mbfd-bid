@@ -75,6 +75,57 @@ describe('captured shift rosters', () => {
     });
     expect(roster.shifts.every((s) => s.selected === 0)).toBe(true);
   });
+  it('omits withdrawn open opportunities from current PDF and Excel views while preserving fixed and selected rows and historical snapshots', async () => {
+    const input = shiftExportFixture();
+    const position = input.snapshot.ruleBookMaterial.positions[0];
+    const member = input.snapshot.members[0];
+    const identity = input.snapshot.operatorIdentityProjection?.[0];
+    if (!position || !member || !identity) throw new Error('Synthetic fixture missing');
+    input.snapshot.ruleBookMaterial.positions.push({
+      ...position,
+      id: 'A801',
+      bidParticipation: 'ADMIN_ASSIGNED_NON_BIDDABLE',
+      positionName: 'Fixed captain',
+    });
+    input.snapshot.members.push({
+      ...member,
+      memberId: 4,
+      pool: 'EXCLUDED',
+      exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+      currentBidPositionIds: ['A801'],
+    });
+    input.snapshot.operatorIdentityProjection?.push({
+      ...identity,
+      memberId: 4,
+      employeeId: 'SYNTHETIC_FIXED4',
+      firstName: 'Fixed',
+      lastName: 'Captain',
+    });
+    const state = { ...input.state, live: { ...input.state.live, withdrawnPositionIds: ['A102'] } };
+    const before = JSON.stringify(input);
+    const roster = buildShiftRoster({ ...input, state });
+    const rows = roster.shifts.flatMap((shift) =>
+      shift.stations.flatMap((station) => station.rows),
+    );
+    expect(rows.some((row) => row.positionId === 'A102')).toBe(false);
+    expect(rows.find((row) => row.positionId === 'A101')?.status).toBe('Selected');
+    expect(rows.find((row) => row.positionId === 'A801')).toMatchObject({
+      member: 'Fixed Captain',
+      status: 'Not biddable',
+      administrativeAssignment: true,
+    });
+    expect(roster.shifts[0]).toMatchObject({ positions: 2, selected: 1, available: 0 });
+    expect(renderShiftRosterHtml(roster)).not.toContain('A102');
+    const workbook = await generateShiftWorkbook(roster);
+    const sheets = await readXlsxFile(await workbook.arrayBuffer());
+    expect(sheets[0]?.data.some((row) => row[0] === 'A102')).toBe(false);
+    expect(sheets[0]?.data.some((row) => row[0] === 'A801')).toBe(true);
+    const historical = buildShiftRoster(input);
+    expect(historical.shifts[0]?.stations[0]?.rows.some((row) => row.positionId === 'A102')).toBe(
+      true,
+    );
+    expect(JSON.stringify(input)).toBe(before);
+  });
 
   it('creates a genuine multi-sheet Excel file with literal strings, open seats and A-Days', async () => {
     const blob = await generateShiftWorkbook(buildShiftRoster(shiftExportFixture()));

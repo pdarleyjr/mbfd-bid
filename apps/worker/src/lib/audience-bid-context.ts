@@ -5,11 +5,17 @@ import {
   resolveDepartmentPositionOrganization,
 } from './department-organization.js';
 import { canonicalRosterShift, isCalendarDate } from './department-roster.js';
+import { liveMemberHasOpenTurn, liveTurnIsCompleted } from './live-bid-opportunities.js';
 
 export type AudienceQueueState = Pick<
   BidSessionState,
   'fills' | 'bidOrder' | 'queueCursor' | 'currentBidderId' | 'currentPhase' | 'aDay'
-> & { live?: Pick<LiveBidProgress, 'dispositions' | 'exceptionalAssignments'> };
+> & {
+  live?:
+    | (Pick<LiveBidProgress, 'dispositions' | 'exceptionalAssignments'> &
+        Partial<Pick<LiveBidProgress, 'completedStageIds'>>)
+    | null;
+};
 
 /** An early specialty award keeps its ordinary A-Day turn. Repeated eligible
  * stages never create duplicate people in the audience queue. */
@@ -42,11 +48,18 @@ export function remainingAudienceQueue(state: AudienceQueueState, policy?: Froze
   const seen = new Set<number>();
   const candidates = [
     ...(state.currentBidderId === null ? [] : [state.currentBidderId]),
-    ...state.bidOrder.slice(state.queueCursor).map((entry) => entry.memberId),
-    ...state.bidOrder.slice(0, state.queueCursor).map((entry) => entry.memberId),
+    ...state.bidOrder
+      .slice(state.queueCursor)
+      .filter((entry) => !liveTurnIsCompleted(state, entry))
+      .map((entry) => entry.memberId),
+    ...state.bidOrder
+      .slice(0, state.queueCursor)
+      .filter((entry) => !liveTurnIsCompleted(state, entry))
+      .map((entry) => entry.memberId),
   ];
   return candidates.flatMap((memberId) => {
-    if (seen.has(memberId) || assigned.has(memberId)) return [];
+    if (seen.has(memberId) || assigned.has(memberId) || !liveMemberHasOpenTurn(state, memberId))
+      return [];
     seen.add(memberId);
     const pendingADay = needsADay(memberId);
     if (awards.has(memberId) && !pendingADay) return [];

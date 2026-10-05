@@ -185,6 +185,53 @@ const sortedPicks = (result: ReturnType<typeof evaluate>) =>
     : result.code;
 
 describe('deferred early-award A-Day replay determinism', () => {
+  it('ends a completed deferred turn without inventing its A-Day or losing recorded picks and phase-one evidence', () => {
+    const current = state([{ memberId: 2, aDay: 'G2', pickedAtMs: 100 }]);
+    const first = current.bidOrder[0];
+    if (!first) throw new Error('Expected first turn');
+    current.bidOrder = [{ ...first, stageId: 'closed' }, ...current.bidOrder.slice(1)];
+    current.live = {
+      currentStageId: 'ff',
+      completedStageIds: ['closed'],
+      pausedPhase: null,
+      lastSelectionBidId: null,
+      dispositions: [],
+    };
+    const fills = structuredClone(current.fills);
+    const result = evaluateFrozenADays(fixture(1), current, {
+      nowMs: 5000,
+      actorId: 99,
+      forced: false,
+      finalize: false,
+    });
+    if (!result.ok) throw new Error(result.code);
+    expect(result.nextDeferredMemberId).toBeNull();
+    expect(result.aDay?.picks.find((pick) => pick.memberId === 1)).toBeUndefined();
+    expect(result.aDay?.picks.find((pick) => pick.memberId === 2)).toEqual(current.aDay?.picks[0]);
+    expect(result.aDay?.phase1.map(([memberId]) => memberId)).toEqual([1, 2, 3, 4]);
+    expect(current.fills).toEqual(fills);
+  });
+  it('retains deferred selection rights through a separate open ordinary turn after a specialty stage completes', () => {
+    const current = state([{ memberId: 2, aDay: 'G2', pickedAtMs: 100 }]);
+    const first = current.bidOrder[0];
+    if (!first) throw new Error('Expected first turn');
+    current.bidOrder = [{ ...first, stageId: 'specialty' }, ...current.bidOrder];
+    current.live = {
+      currentStageId: 'ff',
+      completedStageIds: ['specialty'],
+      pausedPhase: null,
+      lastSelectionBidId: null,
+      dispositions: [],
+    };
+    expect(
+      evaluateFrozenADays(fixture(1), current, {
+        nowMs: 5000,
+        actorId: 99,
+        forced: false,
+        finalize: false,
+      }),
+    ).toMatchObject({ ok: true, nextDeferredMemberId: 1 });
+  });
   it('accepts the same valid set identically for same-millisecond and reversed persisted order', () => {
     const a: Pick = { memberId: 1, aDay: 'G1', pickedAtMs: 100 };
     const b: Pick = { memberId: 2, aDay: 'G2', pickedAtMs: 100 };

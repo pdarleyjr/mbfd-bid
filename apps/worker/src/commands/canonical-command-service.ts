@@ -35,6 +35,7 @@ import {
 } from '../lib/bid-policy.js';
 import { unresolvedSpecialtyPriority } from '../lib/canonical-specialty-priority.js';
 import { evaluateFrozenADays } from '../lib/frozen-a-day.js';
+import { withdrawnLivePositionIds } from '../lib/live-bid-opportunities.js';
 import { validateBidCorrectionLineage } from './bid-correction-lineage.js';
 import { advancePastResolvedLiveBidTurn, reduceLiveBidCommand } from './live-bid-reducer.js';
 
@@ -182,6 +183,14 @@ function isBidSessionStateProjection(
     return false;
   }
   if (!isNonnegativeInteger(value.queueCursor)) return false;
+  if (
+    isRecord(value.live) &&
+    value.live.withdrawnPositionIds !== undefined &&
+    (!Array.isArray(value.live.withdrawnPositionIds) ||
+      !value.live.withdrawnPositionIds.every((id) => typeof id === 'string' && id.length > 0) ||
+      new Set(value.live.withdrawnPositionIds).size !== value.live.withdrawnPositionIds.length)
+  )
+    return false;
   if (value.frozenAt !== null && !isNonnegativeInteger(value.frozenAt)) return false;
   return value.aDay === null || isPersistedADayState(value.aDay);
 }
@@ -880,8 +889,48 @@ export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandI
       : frozen.snapshot.settings.v !== 3 ||
           canonicalJson(frozen.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
         ? 'LIVE_POLICY_MISMATCH'
-        : member === undefined || member.pool === 'EXCLUDED'
+        : input.command.type !== 'live.transition_stage' &&
+            (member === undefined || member.pool === 'EXCLUDED')
           ? 'MEMBER_NOT_IN_BID_POOL'
+          : null;
+    if (code !== null) {
+      const result: LiveBidCommandResult = {
+        kind: 'rejected',
+        commandId: input.command.commandId,
+        code,
+        currentSeq: current.lastSeq,
+      };
+      await recordRejectedReceipt(
+        input.db,
+        input.command as unknown as MockFreezeCommand,
+        requestSha256,
+        result as unknown as MockFreezeCommandResult,
+        now,
+      );
+      return { result, canonicalState: null };
+    }
+  }
+  if (input.command.type === 'live.transition_stage') {
+    const frozen = await loadCommandFrozenPolicy();
+    const requested = [
+      ...(input.command.withdrawOpenPositionIds ?? []),
+      ...(input.command.restoreOpenPositionIds ?? []),
+    ];
+    const code = !frozen.ok
+      ? frozen.code.toUpperCase()
+      : frozen.snapshot.settings.v !== 3 ||
+          canonicalJson(frozen.snapshot.settings.livePolicy) !== canonicalJson(input.policy)
+        ? 'LIVE_POLICY_MISMATCH'
+        : requested.some(
+              (id) =>
+                !frozen.snapshot.ruleBookMaterial.positions.some(
+                  (position) =>
+                    position.id === id &&
+                    position.bidParticipation === 'BIDDABLE' &&
+                    !position.isExcludedFromCount,
+                ),
+            )
+          ? 'OPPORTUNITY_NOT_BIDDABLE'
           : null;
     if (code !== null) {
       const result: LiveBidCommandResult = {
@@ -1307,6 +1356,7 @@ export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandI
               material: frozen.snapshot.ruleBookMaterial,
               policy: input.policy,
               fills: selectionReviewState.fills,
+              withdrawnPositionIds: withdrawnLivePositionIds(selectionReviewState),
               positionId,
               // Reduction above has already checked the explicit override's
               // frozen force grant; ordinary and force-only picks stay ordered.
@@ -1337,7 +1387,9 @@ export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandI
       }
       if (pooled.pool) {
         const nextPositionId = pooled.pool.positionIds.find(
-          (id) => selectionReviewState.fills[id] === undefined,
+          (id) =>
+            selectionReviewState.fills[id] === undefined &&
+            !withdrawnLivePositionIds(selectionReviewState).has(id),
         );
         if (administratorOverride && nextPositionId !== positionId)
           addAdminBidOverrideWarning(

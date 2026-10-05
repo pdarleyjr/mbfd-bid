@@ -35,6 +35,33 @@ function queueState(): AudienceQueueState {
 }
 
 describe('audience remaining turns', () => {
+  it('ends completed officer turns while preserving a specialty member with a separate open ordinary turn', () => {
+    const state = queueState();
+    state.currentBidderId = 3;
+    state.bidOrder = [
+      { memberId: 1, ordinal: 0, pool: 'OFC', stageId: 'lt' },
+      { memberId: 2, ordinal: 1, pool: 'FF', stageId: 'specialty' },
+      { memberId: 2, ordinal: 2, pool: 'FF', stageId: 'ff' },
+      { memberId: 3, ordinal: 3, pool: 'FF', stageId: 'ff' },
+    ];
+    state.queueCursor = 3;
+    state.live = { dispositions: [], completedStageIds: ['lt', 'specialty'] };
+    state.fills = {
+      A101: {
+        memberId: 1,
+        ordinal: 0,
+        bidId: 'officer',
+        aDayDeferral: { commandId: 'approved', actorMemberId: 99, reason: '', positionId: 'A101' },
+      },
+      B213: { memberId: 2, ordinal: 1, bidId: 'specialty' },
+    };
+    const before = structuredClone(state.fills);
+    expect(remainingAudienceQueue(state, policy)).toEqual([
+      { memberId: 3, pendingADay: false },
+      { memberId: 2, pendingADay: true },
+    ]);
+    expect(state.fills).toEqual(before);
+  });
   it('retains a separately approved deferred A-Day for a simultaneous seat', () => {
     const state = queueState();
     state.fills.A101 = {

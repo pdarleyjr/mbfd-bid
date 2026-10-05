@@ -3,6 +3,7 @@ import type { BidSessionPolicySnapshot } from '@mbfd/shared';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { evaluateFallbackActivation } from './bid-fallback-activation.js';
 import { eligibilityMemberFromFrozen } from './bid-policy.js';
+import { liveMemberHasOpenTurn, withdrawnLivePositionIds } from './live-bid-opportunities.js';
 import { sortWithFrozenOrdering } from './live-bid-policy.js';
 import { decodePositionRule } from './position-rule.js';
 
@@ -14,6 +15,8 @@ export function evaluateBidFallback(input: {
   positionId: string;
 }) {
   const { snapshot, state, positionId } = input;
+  if (withdrawnLivePositionIds(state).has(positionId))
+    return { ok: false as const, code: 'POSITION_WITHDRAWN' };
   const policy =
     snapshot.settings.v === 3
       ? snapshot.settings.livePolicy.annualOperations?.fallbackPolicies?.find((p) =>
@@ -29,7 +32,10 @@ export function evaluateBidFallback(input: {
   if (!activation.ok) return activation;
   const awarded = new Set(Object.values(state.fills).map((fill) => fill.memberId));
   const available = snapshot.members.filter(
-    (member) => member.pool !== 'EXCLUDED' && !awarded.has(member.memberId),
+    (member) =>
+      member.pool !== 'EXCLUDED' &&
+      !awarded.has(member.memberId) &&
+      liveMemberHasOpenTurn(state, member.memberId),
   );
   const exhausted: { tierId: string; eligibleMemberIds: number[]; reason: string }[] = [];
   for (const tier of policy.tiers) {

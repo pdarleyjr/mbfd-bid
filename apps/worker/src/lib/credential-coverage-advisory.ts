@@ -7,6 +7,7 @@ import {
   eligibleFrozenSpecialtyMembers,
   endedLiveSelectionRights,
 } from './canonical-specialty-priority.js';
+import { withdrawnLivePositionIds } from './live-bid-opportunities.js';
 import { adviseFrozenSpecialtyCoverage } from './specialty-coverage-advisory.js';
 
 /** Counts actual frozen eligibility for open credential-dependent seats, including
@@ -23,6 +24,7 @@ function calculateFrozenCredentialCoverage(input: {
   const specialties = annual?.specialties ?? [];
   const groups = new Map<string, { label: string; positionIds: string[] }>();
   for (const rule of input.rules) {
+    if (withdrawnLivePositionIds(input.state).has(rule.positionId)) continue;
     const specialty = specialties.find((entry) =>
       entry.opportunityPositionIds.includes(rule.positionId),
     );

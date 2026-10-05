@@ -61,6 +61,38 @@ function item<T>(values: T[], index = 0): T {
 }
 
 describe('explicit frozen opportunity pools', () => {
+  it('removes withdrawn capacity without fake occupancy and restores the original slot order', () => {
+    const { material, policy } = fixture();
+    const fills = {};
+    const withdrawnPositionIds = new Set(['z-first']);
+    expect(projectBidOpportunityPools(material, policy, fills, withdrawnPositionIds)).toMatchObject(
+      [{ capacity: 1, remaining: 1, resolvedPositionId: 'a-second' }],
+    );
+    expect(
+      resolveBidPoolSelection({
+        material,
+        policy,
+        fills,
+        positionId: 'z-first',
+        poolId: 'pool',
+        withdrawnPositionIds,
+      }),
+    ).toEqual({ ok: false, code: 'POSITION_WITHDRAWN' });
+    expect(
+      resolveBidPoolSelection({
+        material,
+        policy,
+        fills,
+        positionId: 'a-second',
+        poolId: 'pool',
+        withdrawnPositionIds,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(fills).toEqual({});
+    expect(projectBidOpportunityPools(material, policy, fills)).toMatchObject([
+      { capacity: 2, resolvedPositionId: 'z-first' },
+    ]);
+  });
   it('preserves reviewed slot order and ignores daily apparatus labels', () => {
     const { material, policy, pool } = fixture();
     expect(item(BidOpportunityPoolsSchema.parse([pool])).positionIds).toEqual([

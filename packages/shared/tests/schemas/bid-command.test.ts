@@ -8,6 +8,47 @@ import {
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('systemic reviewed adjustment envelopes', () => {
+  it('accepts bounded unique session stage changes and preserves the old forward-transition envelope', () => {
+    const command = {
+      v: 1,
+      type: 'live.transition_stage',
+      commandId: COMMAND_ID,
+      bidSessionId: 's',
+      expectedSeq: 3,
+      actor: { id: 99, role: 'admin' },
+      evidenceReference: null,
+      stageId: 'ff',
+    };
+    expect(LiveBidCommandSchema.safeParse(command).success).toBe(true);
+    expect(
+      LiveBidCommandSchema.parse({
+        ...command,
+        completePriorStages: true,
+        withdrawOpenPositionIds: ['A718'],
+        restoreOpenPositionIds: ['B718'],
+        adminOverride: { acknowledged: true, warningCodes: [] },
+      }),
+    ).toMatchObject({ completePriorStages: true, reason: '' });
+    for (const withdrawOpenPositionIds of [
+      [],
+      ['a', 'a'],
+      [''],
+      Array.from({ length: 2001 }, (_, i) => String(i)),
+    ])
+      expect(LiveBidCommandSchema.safeParse({ ...command, withdrawOpenPositionIds }).success).toBe(
+        false,
+      );
+    expect(LiveBidCommandSchema.safeParse({ ...command, completePriorStages: 'yes' }).success).toBe(
+      false,
+    );
+    expect(
+      LiveBidCommandSchema.safeParse({
+        ...command,
+        actor: { id: 99, role: 'member' },
+        completePriorStages: true,
+      }).success,
+    ).toBe(false);
+  });
   it('keeps source confirmation optional for historical envelopes and validates supplied digests', () => {
     const command = {
       v: 1,

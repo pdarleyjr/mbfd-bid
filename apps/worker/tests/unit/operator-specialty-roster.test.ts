@@ -105,6 +105,88 @@ function project(input: ReturnType<typeof fixture>) {
     credentialCoverage: projectFrozenCredentialCoverage(input),
   });
 }
+
+const operationsCertificates = [
+  'Hazardous Materials Operations',
+  'Rope Rescue Operations',
+  'Vehicle & Machinery Rescue Operations',
+  'Confined Space Operations',
+  'Structural Collapse Operations',
+  'Trench Rescue Operations',
+];
+
+function operationsInventoryFixture() {
+  const input = fixture();
+  const rule = input.rules[0];
+  if (!rule) throw new Error('Synthetic rule missing');
+  rule.pointsPreference = { ...rule.pointsPreference };
+  rule.pointsPreference.scoring = {
+    v: 1,
+    total: [],
+    mo: [],
+    so: [
+      {
+        id: 'synthetic-so-operations',
+        cap: 13,
+        items: [
+          {
+            credential: 'Rope Rescue Technician',
+            alternatives: [],
+            requiresAll: [...operationsCertificates],
+            points: 1,
+          },
+        ],
+      },
+    ],
+  };
+  for (const member of input.snapshot.members) {
+    member.credentialNames =
+      member.memberId <= 2
+        ? [...operationsCertificates]
+        : member.memberId === 3
+          ? operationsCertificates.slice(1)
+          : [
+              'State Certified Hazardous Materials Technician',
+              'Rope Rescue Technician',
+              'Vehicle & Machinery Rescue Technician',
+              'Confined Space Technician',
+              'Structural Collapse Technician',
+              'Trench Rescue Technician',
+            ];
+    // Documentary points and past completion do not supply a missing current
+    // certificate to this display-only inventory.
+    member.scoringEvidence = {
+      evaluationOn: '2030-01-01',
+      completedCredentialNames: [...operationsCertificates],
+    };
+    member.scoreReferenceEvidence = [
+      {
+        v: 1,
+        listId: 'synthetic-inflated-score',
+        positionIds: ['DE1'],
+        points: 999,
+        soPoints: 999,
+        moPoints: 0,
+        sourceName: 'Synthetic score evidence',
+        sourceSha256: 'a'.repeat(64),
+        sourceLocation: { page: 1, textLine: member.memberId },
+        literalTotal: 999,
+        printedBidOrder: member.memberId,
+        sourcePriority: member.memberId,
+      },
+    ];
+  }
+  const member = input.snapshot.members[0];
+  if (!member) throw new Error('Synthetic member missing');
+  input.snapshot.members.push({
+    ...member,
+    memberId: 5,
+    pool: 'EXCLUDED',
+    exclusionReason: 'MEMBER_CATEGORY_EXCLUDED',
+  });
+  input.state.fills.REGULAR = { memberId: 2, ordinal: 2, bidId: 'synthetic-taken' };
+  return input;
+}
 describe('canonical operator specialty roster', () => {
   it('exposes every configured qualification profile and reviewed membership pool without including ordinary seats', () => {
     const input = fixture();
@@ -294,4 +376,77 @@ describe('canonical operator specialty roster', () => {
     });
     expect(input.state.lastSeq).toBe(6);
   });
+  it('removes an audited withdrawn opportunity from specialty capacity and exact candidate scopes without changing frozen rules or fills', () => {
+    const input = fixture();
+    input.state.live = {
+      currentStageId: 'ff',
+      completedStageIds: [],
+      pausedPhase: null,
+      lastSelectionBidId: null,
+      dispositions: [],
+      withdrawnPositionIds: ['DE1'],
+    };
+    const before = JSON.stringify(input);
+    const result = project(input);
+    expect(result.groups.some((group) => group.positionIds.includes('DE1'))).toBe(false);
+    expect(result.groups.find((group) => group.id === 'profile:DE2')).toMatchObject({
+      positionIds: ['DE2'],
+      remainingSeatCount: 1,
+    });
+    expect(
+      result.groups
+        .flatMap((group) => group.candidates)
+        .some((candidate) => candidate.eligiblePositionIds.includes('DE1')),
+    ).toBe(false);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+  it('shows only frozen holders of all six Operations certificates without claiming TRT membership, seats or priority', () => {
+    const input = operationsInventoryFixture();
+    const before = JSON.stringify(input);
+    const group = project(input).groups.find((entry) => entry.id === 'inventory:trt-operations');
+    expect(group).toMatchObject({
+      label: 'TRT · Operations certificates',
+      certificateInventory: { credentialNames: operationsCertificates },
+      positionIds: [],
+      remainingSeatCount: null,
+      eligibleMemberCount: 1,
+      status: null,
+      criticalMemberIds: [],
+      rankingAvailable: false,
+      dataBlockedMemberIds: [],
+      candidates: [
+        { memberId: 1, priority: null, points: null, eligiblePositionIds: [], available: true },
+        { memberId: 2, priority: null, points: null, eligiblePositionIds: [], available: false },
+      ],
+    });
+    expect(group?.candidates.map((entry) => entry.memberId)).toEqual([1, 2]);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+  it.each(['missing', 'incomplete', 'duplicate', 'unknown', 'conflicting'] as const)(
+    'does not invent an Operations inventory when the frozen SO prerequisite basis is %s',
+    (kind) => {
+      const input = operationsInventoryFixture();
+      const rule = input.rules[0];
+      const group = rule?.pointsPreference.scoring?.so[0];
+      const gate = group?.items[0];
+      if (!rule || !group || !gate) throw new Error('Synthetic frozen SO gate missing');
+      if (kind === 'missing')
+        rule.pointsPreference = {
+          max: rule.pointsPreference.max,
+          items: rule.pointsPreference.items,
+        };
+      else if (kind === 'incomplete') gate.requiresAll.pop();
+      else if (kind === 'duplicate') gate.requiresAll[5] = operationsCertificates[0] ?? '';
+      else if (kind === 'unknown') gate.requiresAll[5] = 'Unreviewed certificate';
+      else
+        group.items.push({
+          ...gate,
+          credential: 'Synthetic conflicting technician gate',
+          requiresAll: operationsCertificates.slice(1),
+        });
+      expect(
+        project(input).groups.find((entry) => entry.id === 'inventory:trt-operations'),
+      ).toBeUndefined();
+    },
+  );
 });

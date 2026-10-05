@@ -18,6 +18,11 @@ import {
   validateUnreachableContact,
 } from '../lib/annual-bid-operations.js';
 import { unresolvedBidCorrections } from '../lib/bid-corrections.js';
+import {
+  liveMemberHasOpenTurn,
+  liveTurnIsCompleted,
+  withdrawnLivePositionIds,
+} from '../lib/live-bid-opportunities.js';
 import { currentLiveBidStage, liveBidSelectionStages } from '../lib/live-bid-stages.js';
 
 function settleReturnedMember(
@@ -63,7 +68,8 @@ export type LiveReduction =
     }
   | { ok: false; code: string };
 
-function actionFor(command: LiveBidCommand): LiveBidAction {
+export function liveBidActionForCommand(command: LiveBidCommand): LiveBidAction {
+  if (command.type === 'live.transition_stage') return 'approve_transition';
   if (hasAdminBidOverride(command)) return 'force';
   switch (command.type) {
     case 'live.record_selection':
@@ -91,8 +97,6 @@ function actionFor(command: LiveBidCommand): LiveBidAction {
       return 'skip_defer';
     case 'live.complete_session':
       return 'approve_final_results';
-    case 'live.transition_stage':
-      return 'approve_transition';
     case 'live.alter_order':
       return 'alter_order';
     case 'live.start_specialty_adjudication':
@@ -119,6 +123,7 @@ function memberHasDeferredOrdinaryTurn(
   policy: FrozenLiveBidPolicy,
   memberId: number,
 ): boolean {
+  if (!liveMemberHasOpenTurn(state, memberId)) return false;
   return Object.entries(state.fills).some(
     ([positionId, fill]) =>
       fill.memberId === memberId &&
@@ -157,6 +162,10 @@ function nextAvailableFrom(
   const picked = new Set(state.aDay?.picks.map((pick) => pick.memberId) ?? []);
   while (state.bidOrder[queueCursor]) {
     const memberId = state.bidOrder[queueCursor]?.memberId ?? -1;
+    if (liveTurnIsCompleted(state, state.bidOrder[queueCursor] ?? {})) {
+      queueCursor += 1;
+      continue;
+    }
     if (
       state.live?.exceptionalAssignments?.some(
         (entry) => entry.memberId === memberId && entry.releasedAtMs === null,
@@ -188,6 +197,7 @@ function nextAvailableFrom(
   }
   const pending = state.bidOrder.find(
     (candidate) =>
+      !liveTurnIsCompleted(state, candidate) &&
       !picked.has(candidate.memberId) &&
       memberHasDeferredOrdinaryTurn(state, policy, candidate.memberId) &&
       deferredADayBelongsToTurn(state, policy, candidate.memberId, candidate.stageId),
@@ -238,6 +248,7 @@ export function participantCoverageGaps(
 ): number[] {
   const participants = [...new Set(policy.stages.flatMap((stage) => stage.memberIds))];
   return participants.filter((memberId) => {
+    if (!liveMemberHasOpenTurn(state, memberId)) return false;
     if (
       live.exceptionalAssignments?.some(
         (entry) => entry.memberId === memberId && entry.releasedAtMs === null,
@@ -279,7 +290,8 @@ export function reduceLiveBidCommand(
 ): LiveReduction {
   const permitted = policy.actionPermissions.some(
     (grant) =>
-      grant.action === actionFor(command) && grant.actorMemberIds.includes(command.actor.id),
+      grant.action === liveBidActionForCommand(command) &&
+      grant.actorMemberIds.includes(command.actor.id),
   );
   if (!permitted) return { ok: false, code: 'LIVE_ACTION_FORBIDDEN' };
   if (state.frozenAt !== null) return { ok: false, code: 'SESSION_FROZEN' };
@@ -307,6 +319,18 @@ export function reduceLiveBidCommand(
     warnings: overrideWarnings,
     warningCodes: overrideWarnings.map((warning) => warning.code),
   });
+  const targetPositionId =
+    command.type === 'live.correct_bid'
+      ? command.replacement?.positionId
+      : command.type === 'live.amend_selection'
+        ? command.toPositionId
+        : command.type === 'live.resolve_specialty_candidate' && command.outcome === 'ACCEPT'
+          ? (command.positionId ?? live.specialty?.positionId)
+          : 'positionId' in command
+            ? command.positionId
+            : undefined;
+  if (targetPositionId != null && withdrawnLivePositionIds(state).has(targetPositionId))
+    return { ok: false, code: 'POSITION_WITHDRAWN' };
   if (administratorOverride) {
     const executionPhase = state.currentPhase === 'paused' ? live.pausedPhase : state.currentPhase;
     if (!['position_bid', 'a_day_bid', 'complete'].includes(executionPhase ?? ''))
@@ -597,30 +621,123 @@ export function reduceLiveBidCommand(
   }
   if (command.type === 'live.transition_stage') {
     const target = policy.stages.find((stage) => stage.id === command.stageId);
+    const currentStage = policy.stages.find((stage) => stage.id === currentStageId);
     if (
       !target ||
-      target.order <=
-        (policy.stages.find((stage) => stage.id === currentStageId)?.order ??
-          Number.POSITIVE_INFINITY)
+      !currentStage ||
+      target.order < currentStage.order ||
+      live.completedStageIds.includes(target.id)
     )
       return { ok: false, code: 'INVALID_STAGE_TRANSITION' };
+    if (state.currentPhase === 'config') return { ok: false, code: 'SESSION_NOT_ACTIVE' };
+    if (live.specialty != null) return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
+    const withdraw = command.withdrawOpenPositionIds ?? [];
+    const restore = command.restoreOpenPositionIds ?? [];
+    const configurationRequested =
+      command.completePriorStages === true || withdraw.length > 0 || restore.length > 0;
+    if (configurationRequested && !administratorOverride)
+      return { ok: false, code: 'ADMIN_STAGE_ADJUSTMENT_REVIEW_REQUIRED' };
+    if (new Set(withdraw).size !== withdraw.length || new Set(restore).size !== restore.length)
+      return { ok: false, code: 'POSITION_CONFIGURATION_DUPLICATE' };
+    if (withdraw.some((id) => restore.includes(id)))
+      return { ok: false, code: 'POSITION_WITHDRAWAL_RESTORATION_CONFLICT' };
+    const biddable = new Set(policy.stages.flatMap((stage) => stage.opportunityPositionIds));
+    const withdrawn = new Set(live.withdrawnPositionIds ?? []);
+    for (const id of [...withdraw, ...restore]) {
+      if (!biddable.has(id)) return { ok: false, code: 'OPPORTUNITY_NOT_BIDDABLE' };
+      if (state.fills[id] !== undefined) return { ok: false, code: 'POSITION_FILLED' };
+    }
+    if (withdraw.some((id) => withdrawn.has(id)))
+      return { ok: false, code: 'POSITION_ALREADY_WITHDRAWN' };
+    if (restore.some((id) => !withdrawn.has(id)))
+      return { ok: false, code: 'POSITION_NOT_WITHDRAWN' };
+    const completed = new Set(live.completedStageIds);
+    if (target.order > currentStage.order) completed.add(currentStageId);
+    if (command.completePriorStages)
+      for (const stage of [...policy.stages].sort((left, right) => left.order - right.order))
+        if (stage.order < target.order) completed.add(stage.id);
+    const newlyCompletedStageIds = [...completed].filter(
+      (id) => !live.completedStageIds.includes(id),
+    );
+    if (
+      target.id === currentStageId &&
+      !newlyCompletedStageIds.length &&
+      !withdraw.length &&
+      !restore.length
+    )
+      return { ok: false, code: 'NO_STAGE_CONFIGURATION_CHANGE' };
+    for (const id of withdraw) withdrawn.add(id);
+    for (const id of restore) withdrawn.delete(id);
+    let configured = {
+      ...state,
+      live: { ...live, completedStageIds: [...completed], withdrawnPositionIds: [...withdrawn] },
+    };
+    if (
+      configured.annual?.returningMemberId != null &&
+      !liveMemberHasOpenTurn(configured, configured.annual.returningMemberId)
+    )
+      configured = { ...configured, annual: { ...configured.annual, returningMemberId: null } };
     const index = state.bidOrder.findIndex((entry) => entry.stageId === target.id);
     if (index < 0) return { ok: false, code: 'LIVE_STAGE_POLICY_INCOMPLETE' };
-    const advance = nextAvailableFrom(state, policy, index, now);
+    const advance =
+      target.id === currentStageId && newlyCompletedStageIds.length === 0
+        ? {
+            queueCursor: state.queueCursor,
+            currentBidderId: state.currentBidderId,
+            currentPhase:
+              state.currentPhase === 'paused'
+                ? (live.pausedPhase ?? ('position_bid' as const))
+                : state.currentPhase,
+            turnStartedAtMs: state.turnStartedAtMs,
+          }
+        : nextAvailableFrom(
+            configured,
+            policy,
+            target.id === currentStageId ? state.queueCursor : Math.max(state.queueCursor, index),
+            now,
+          );
+    if (newlyCompletedStageIds.length && administratorOverride)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'STAGE_COMPLETION',
+        'Earlier stages are complete for this session. Their recorded seats and unknown A-Day evidence remain unchanged.',
+      );
+    if (withdraw.length)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'OPPORTUNITY_WITHDRAWAL',
+        `Withdraw ${withdraw.join(', ')} from this session. Existing selections and the frozen definition remain unchanged.`,
+      );
+    if (restore.length)
+      addAdminBidOverrideWarning(
+        overrideWarnings,
+        'OPPORTUNITY_RESTORATION',
+        `Restore ${restore.join(', ')} as open opportunities in this session.`,
+      );
     return {
       ok: true,
       state: {
-        ...state,
+        ...configured,
         ...advance,
         live: {
-          ...live,
+          ...configured.live,
           currentStageId: state.bidOrder[advance.queueCursor]?.stageId ?? target.id,
-          completedStageIds: [...live.completedStageIds, currentStageId],
+          ...(state.currentPhase === 'paused' ? { pausedPhase: advance.currentPhase } : {}),
         },
+        ...(state.currentPhase === 'paused' ? { currentPhase: 'paused' as const } : {}),
         lastSeq: state.lastSeq + 1,
       },
       eventType: 'live_command_applied',
-      payload: { operation: 'transition_stage', fromStageId: currentStageId, stageId: target.id },
+      payload: {
+        operation: 'transition_stage',
+        fromStageId: currentStageId,
+        stageId: target.id,
+        completedStageIds: newlyCompletedStageIds,
+        withdrawnPositionIds: withdraw,
+        restoredPositionIds: restore,
+        nextMemberId: advance.currentBidderId,
+        ...(administratorOverride ? { adminOverride: overridePayload() } : {}),
+      },
       supersedesBidId: null,
     };
   }
@@ -638,6 +755,8 @@ export function reduceLiveBidCommand(
             aDay: state.aDay,
             exceptionalAssignments: live.exceptionalAssignments ?? [],
             dispositions: live.dispositions,
+            completedStageIds: [...live.completedStageIds],
+            withdrawnPositionIds: [...(live.withdrawnPositionIds ?? [])],
             returningMemberId: state.annual?.returningMemberId ?? null,
           }
         : null;
@@ -666,7 +785,8 @@ export function reduceLiveBidCommand(
     if (!administratorOverride && live.specialty !== null && live.specialty !== undefined)
       return { ok: false, code: 'SPECIALTY_ADJUDICATION_ACTIVE' };
     const committed = state.bidOrder.slice(0, state.queueCursor);
-    const remaining = state.bidOrder.slice(state.queueCursor);
+    const remainingTail = state.bidOrder.slice(state.queueCursor);
+    const remaining = remainingTail.filter((entry) => !liveTurnIsCompleted(state, entry));
     const supplied = command.orderedRemainingMemberIds;
     const remainingCounts = new Map<number, number>();
     const suppliedCounts = new Map<number, number>();
@@ -725,16 +845,27 @@ export function reduceLiveBidCommand(
       priorStageOrder = order;
     }
     const beforeMemberIds = remaining.map((entry) => entry.memberId);
-    const bidOrder = [...committed, ...(reordered as typeof remaining)];
+    const mergedRemaining: typeof remaining = [];
+    let editableCursor = 0;
+    for (const entry of remainingTail) {
+      if (liveTurnIsCompleted(state, entry)) mergedRemaining.push(entry);
+      else {
+        const replacement = reordered[editableCursor++];
+        if (replacement === undefined) return { ok: false, code: 'ALTER_ORDER_TURN_SET_MISMATCH' };
+        mergedRemaining.push(replacement);
+      }
+    }
+    const bidOrder = [...committed, ...mergedRemaining];
     if (administratorOverride)
       addAdminBidOverrideWarning(
         overrideWarnings,
         'ORDER_DEVIATION',
         'The administrator changes the remaining selection order. Recorded awards and pending selection rights are retained.',
       );
-    const advance = administratorOverride
-      ? nextAvailableFrom({ ...state, bidOrder }, policy, state.queueCursor, now)
-      : null;
+    const advance =
+      administratorOverride || remainingTail.some((entry) => liveTurnIsCompleted(state, entry))
+        ? nextAvailableFrom({ ...state, bidOrder }, policy, state.queueCursor, now)
+        : null;
     return {
       ok: true,
       state: {
@@ -884,7 +1015,9 @@ export function reduceLiveBidCommand(
       const nextCursor = specialty.candidateCursor + 1;
       const continues =
         nextCursor < specialty.candidateMemberIds.length &&
-        specialtyPolicy.opportunityPositionIds.some((id) => fills[id] === undefined);
+        specialtyPolicy.opportunityPositionIds.some(
+          (id) => fills[id] === undefined && !withdrawnLivePositionIds(state).has(id),
+        );
       return {
         ok: true,
         state: {

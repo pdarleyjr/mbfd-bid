@@ -122,6 +122,8 @@ export interface LiveBidProgress {
   }[];
   currentStageId: string | null;
   completedStageIds: readonly string[];
+  /** Audited session-only withdrawal of exact open biddable slots. */
+  withdrawnPositionIds?: readonly string[];
   pausedPhase: CurrentPhase | null;
   lastSelectionBidId: string | null;
   dispositions: readonly {
@@ -154,6 +156,8 @@ export interface LiveBidProgress {
       aDay?: BidSessionState['aDay'];
       exceptionalAssignments?: LiveBidProgress['exceptionalAssignments'];
       dispositions?: LiveBidProgress['dispositions'];
+      completedStageIds?: LiveBidProgress['completedStageIds'];
+      withdrawnPositionIds?: LiveBidProgress['withdrawnPositionIds'];
       returningMemberId?: number | null;
     } | null;
   } | null;

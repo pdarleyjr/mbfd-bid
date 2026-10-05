@@ -21,6 +21,7 @@ import { AdministratorOverride } from './AdministratorOverride';
 import { useBidOperator } from './BidOperatorContext';
 import { CorrectBid } from './CorrectBid';
 import { ReviewedBidAdjustment } from './ReviewedBidAdjustment';
+import { ReviewedStageControls, type StageControlsMetadata } from './ReviewedStageControls';
 import { SessionPresentationLink } from './SessionPresentationLink';
 import type { OperatorSpecialtyRoster } from './operator-specialty-roster';
 
@@ -69,6 +70,8 @@ type FallbackReview = {
     }
 );
 type SpecialtyState = {
+  stage_controls?: StageControlsMetadata;
+  a_day_pending_member_ids?: number[];
   specialty_roster?: OperatorSpecialtyRoster;
   a_day_maximum_per_group?: number | null;
   scoreReceiptSha256?: string | null;
@@ -604,7 +607,7 @@ export function AnnualLiveControls(props: Props) {
   useEffect(() => {
     if (!props.workspace || state === null || !props.onWorkspaceStateChange) return;
     props.onWorkspaceStateChange({
-      aDayPendingMemberIds: [
+      aDayPendingMemberIds: state.a_day_pending_member_ids ?? [
         ...new Set(
           Object.entries(state.fills)
             .filter(
@@ -2527,6 +2530,34 @@ export function AnnualLiveControls(props: Props) {
               >
                 Find saved Mocks
               </a>
+            ) : null}
+            {state?.stage_controls ? (
+              <ReviewedStageControls
+                key={props.bidSessionId}
+                sessionId={props.bidSessionId}
+                sequence={state.sequence}
+                metadata={state.stage_controls}
+                positions={props.positions ?? []}
+                reason={reason}
+                disabled={
+                  busy ||
+                  loadError !== null ||
+                  authRefreshing ||
+                  authReviewRequired ||
+                  state.current_phase !== 'position_bid' ||
+                  state.active !== null
+                }
+                onSaved={() => {
+                  setBusy(true);
+                  void load(state.sequence + 1, true)
+                    .catch((error: unknown) =>
+                      setLoadError(
+                        error instanceof Error ? error.message : 'Bid updates unavailable.',
+                      ),
+                    )
+                    .finally(() => setBusy(false));
+                }}
+              />
             ) : null}
           </article>
           <article hidden={panel !== 'presentation'} className="rounded border border-border p-3">

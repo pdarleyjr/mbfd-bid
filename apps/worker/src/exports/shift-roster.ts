@@ -9,6 +9,7 @@ import type { BidSessionState } from '../durable/bid-session-state.js';
 import { loadFrozenSessionBidPolicy } from '../lib/bid-policy.js';
 import type { CurrentStaffingReceipt } from '../lib/current-staffing-source.js';
 import { projectFrozenNonBidAssignments } from '../lib/frozen-nonbid-assignments.js';
+import { activeLivePositionIds } from '../lib/live-bid-opportunities.js';
 
 export const EXPORT_SHIFTS = ['A', 'B', 'C', 'D'] as const;
 export type ExportShift = (typeof EXPORT_SHIFTS)[number];
@@ -233,6 +234,12 @@ export function buildShiftRoster(input: {
     else duties.set(duty.positionId, [...(duties.get(duty.positionId) ?? []), label]);
   }
   const selectedShifts = input.scope === 'ALL' ? EXPORT_SHIFTS : [input.scope];
+  const activePositionIds = new Set(
+    activeLivePositionIds(
+      { live: state?.live ?? null },
+      snapshot.ruleBookMaterial.positions.map((position) => position.id),
+    ),
+  );
   return {
     sessionId: input.sessionId,
     year: input.year,
@@ -257,7 +264,11 @@ export function buildShiftRoster(input: {
       const stationMap = new Map<string, ShiftRosterRow[]>();
       let selected = 0;
       let available = 0;
-      const shiftPositions = snapshot.ruleBookMaterial.positions.filter((p) => p.shift === shift);
+      const shiftPositions = snapshot.ruleBookMaterial.positions.filter(
+        (p) =>
+          p.shift === shift &&
+          (activePositionIds.has(p.id) || awards.has(p.id) || fixedAssignments.has(p.id)),
+      );
       for (const position of shiftPositions) {
         const award = awards.get(position.id);
         // A canonical temporary duty takes precedence over the current directory

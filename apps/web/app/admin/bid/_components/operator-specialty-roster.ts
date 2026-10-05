@@ -20,6 +20,7 @@ export type OperatorSpecialtyGroup = {
   rankingAvailable: boolean;
   dataBlockedMemberIds: readonly number[];
   rankingCode?: string;
+  certificateInventory?: { credentialNames: readonly string[] };
 };
 
 export type OperatorSpecialtyRoster = {
