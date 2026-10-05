@@ -195,6 +195,34 @@ function panel() {
   return dialog;
 }
 describe('member information focused workspace', () => {
+  it('shows authoritative directory current seat and A-Day instead of older reviewed staffing and keeps prior bid distinct', async () => {
+    await render({
+      ...member,
+      currentAssignment: {
+        evidenceStatus: 'RECORDED',
+        positionId: null,
+        positionLabel: 'Marine Captain',
+        shift: 'B',
+        station: 'Station 6',
+        unit: 'Fire Boat 6',
+        aDayGroup: 'G2',
+        sourceRank: 'Captain',
+        sourceName: 'mbfd_directory.csv',
+        sourceSha256: 'e'.repeat(64),
+        sourceRow: 14,
+        snapshotAt: '2026-10-04T23:00:00Z',
+        source: 'DIRECTORY_CSV',
+      },
+    });
+    expect(container.textContent).toContain(
+      'B Shift · Station 6 · Fire Boat 6 · Marine Captain · A-Day Group 2',
+    );
+    expect(container.textContent).not.toContain('Current Captain');
+    expect(container.textContent).toContain('Rescue Lieutenant');
+    await open();
+    expect(panel().textContent).toContain('mbfd_directory.csv · Row 14');
+    expect(panel().textContent).not.toContain('Current Captain');
+  });
   it('shows previous and current context inline, then read-only credentials and submitted choices in a focused panel', async () => {
     await render();
     expect(container.textContent).toContain('Rescue Lieutenant');

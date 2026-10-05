@@ -1663,7 +1663,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Fill remaining seats shows ordered fallback candidates and recorded responses. Review contacts and evidence, then confirm the next voluntary or forced award.',
       'More controls opens returns, specialty review, fallback, presentation, corrections and bid order. The same controls apply to Mock and Real.',
       'For a break, open Pause or resume bid and select Pause bid. After the saved acknowledgement, you may exit. Reopen the same bid and select Resume bid to retain selections, pending work and remaining turn time. A note is optional. Freeze rehearsal seals a Mock and is separate from a reversible pause.',
-      'Select Export at any point. Choose A, B, C, Days or All shifts and download PDF or Excel. Each shift is a separate Excel worksheet; PDF tables may span several pages.',
+      'Select Export at any point. Choose Shift View for compact station boards, or Bid View for the detailed tables. Choose A, B, C, Days or All shifts, then PDF or Excel. Shift View prints one landscape page per shift; each Excel shift has its own worksheet. Bid View keeps the existing detailed layout.',
     ],
     important:
       'Adjust bid is available to operators granted that authority in the captured Bid. Every confirmed action records the operator, changes, warnings and audit history, with your note if supplied. Ordinary members do not make live selections here. Term departure still requires the member’s explicit consent and evidence.',
@@ -1794,6 +1794,9 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
       'Exports provides controlled roster and Bid export generation, direct CSV downloads, available packages, and portal-sync status.',
     controls: [
       'Select a session',
+      'Shift View or Bid View',
+      'PDF or Excel',
+      'A, B, C, Days or All shifts',
       'Generate',
       'Direct CSV downloads',
       'Available exports',
@@ -1802,6 +1805,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     ],
     steps: [
       'Select the intended session when the export requires one.',
+      'Download current progress with Shift View for compact station boards or Bid View for detailed tables. Choose one shift or all shifts, then PDF or Excel. Both layouts work during any Mock or Real Bid phase.',
       'Choose the correct export type or direct CSV download.',
       'Wait for the generated package to appear and verify its scope before distributing it.',
       'Review portal-sync status rather than assuming a write occurred.',

@@ -78,14 +78,16 @@ describe('read-only shift export downloads', () => {
     expect(response.status).toBe(401);
   });
 
-  it.each([['format=csv&shift=ALL'], ['format=xlsx&shift=Z'], ['shift=A']])(
-    'rejects an invalid selection %s',
-    async (query) => {
-      const response = await request(query);
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: 'invalid_export_selection' });
-    },
-  );
+  it.each([
+    ['format=csv&shift=ALL'],
+    ['format=xlsx&shift=Z'],
+    ['shift=A'],
+    ['format=xlsx&shift=A&view=unknown'],
+  ])('rejects an invalid selection %s', async (query) => {
+    const response = await request(query);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_export_selection' });
+  });
 
   it.each([0, 1])(
     'downloads complete native workbooks mid-bid for isMock=%s without any writes',
@@ -177,4 +179,116 @@ describe('read-only shift export downloads', () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'session_not_found' });
   });
+
+  it.each(
+    [0, 1].flatMap((isMock) =>
+      ['A', 'B', 'C', 'D', 'ALL'].map((shift) => [isMock, shift] as const),
+    ),
+  )(
+    'downloads Shift View Excel without changing awards for isMock=%s shift=%s',
+    async (isMock, shift) => {
+      await h.db.run('UPDATE bid_sessions SET is_mock=? WHERE id=?', [
+        isMock,
+        SHIFT_EXPORT_SESSION,
+      ]);
+      await seedState();
+      const before = h.sqlite.prepare('SELECT * FROM canonical_bid_session_state').all();
+      const response = await request(`format=xlsx&shift=${shift}&view=shift`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-disposition')).toBe(
+        `attachment; filename="mbfd-${isMock ? 'mock' : 'real'}-bid-2026-${shift}-shift-view-seq-7.xlsx"`,
+      );
+      const sheets = await readXlsxFile(await response.arrayBuffer());
+      expect(sheets.map((sheet) => sheet.sheet)).toEqual(
+        shift === 'ALL'
+          ? ['A Shift', 'B Shift', 'C Shift', 'Days']
+          : [shift === 'D' ? 'Days' : `${shift} Shift`],
+      );
+      expect(JSON.stringify(sheets)).toContain('Shift View');
+      expect(h.sqlite.prepare('SELECT * FROM canonical_bid_session_state').all()).toEqual(before);
+      expect(h.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_log').get()).toEqual({
+        count: 0,
+      });
+    },
+  );
+
+  it.each(
+    [0, 1].flatMap((isMock) =>
+      ['A', 'B', 'C', 'D', 'ALL'].map((shift) => [isMock, shift] as const),
+    ),
+  )(
+    'downloads Shift View PDF from one canonical capture for isMock=%s shift=%s',
+    async (isMock, shift) => {
+      await h.db.run('UPDATE bid_sessions SET is_mock=? WHERE id=?', [
+        isMock,
+        SHIFT_EXPORT_SESSION,
+      ]);
+      await seedState();
+      const prepare = vi.spyOn(h.env.DB, 'prepare');
+      const response = await request(`format=pdf&shift=${shift}&view=shift`, undefined, {
+        ...h.env,
+        BROWSER: { fetch: vi.fn() } as never,
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-disposition')).toBe(
+        `attachment; filename="mbfd-${isMock ? 'mock' : 'real'}-bid-2026-${shift}-shift-view-seq-7.pdf"`,
+      );
+      expect(
+        prepare.mock.calls.filter(([sql]) =>
+          /SELECT current_seq, state_json, last_command_id/.test(sql),
+        ),
+      ).toHaveLength(1);
+      const html = (mocks.page.setContent.mock.calls as unknown as Array<[string]>)[0]?.[0] ?? '';
+      expect(html.match(/class="shift-view"/g)).toHaveLength(shift === 'ALL' ? 4 : 1);
+      expect(h.sqlite.prepare('SELECT COUNT(*) AS count FROM audit_log').get()).toEqual({
+        count: 0,
+      });
+    },
+  );
+
+  it('keeps explicit Bid View identical to the original default', async () => {
+    await seedState();
+    const response = await request('format=xlsx&shift=A&view=bid');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="mbfd-mock-bid-2026-A-seq-7.xlsx"',
+    );
+    const sheets = await readXlsxFile(await response.arrayBuffer());
+    expect(sheets[0]?.data[5]).toEqual([
+      'Seat',
+      'Unit',
+      'Position',
+      'Rank',
+      'Member',
+      'A-Day',
+      'Status',
+      'Details',
+    ]);
+  });
+
+  it('reads the current-staffing archive once for ALL Shift View, and skips an invalid archive safely', async () => {
+    await seedState();
+    const get = vi.fn(async () => ({ json: async () => ({ invalid: true }) }));
+    const environment = { ...h.env, R2_EXPORTS: { get } as never };
+    expect((await request('format=xlsx&shift=ALL&view=shift', undefined, environment)).status).toBe(
+      200,
+    );
+    expect(get).toHaveBeenCalledTimes(1);
+    get.mockClear();
+    expect((await request('format=xlsx&shift=ALL&view=bid', undefined, environment)).status).toBe(
+      200,
+    );
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it.each(['config', 'position_bid', 'a_day_bid', 'paused', 'complete'] as const)(
+    'keeps Shift View export available in phase %s',
+    async (phase) => {
+      await seedState({ ...shiftExportFixture().state, currentPhase: phase });
+      const response = await request('format=xlsx&shift=ALL&view=shift');
+      expect(response.status).toBe(200);
+      const sheets = await readXlsxFile(await response.arrayBuffer());
+      expect(sheets[0]?.data[1]?.[0]).toContain(phase.replaceAll('_', ' '));
+    },
+  );
 });

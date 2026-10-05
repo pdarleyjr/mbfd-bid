@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../src/db/index.js';
 import { app } from '../../src/index.js';
 import { loadFrozenSessionBidPolicy } from '../../src/lib/bid-policy.js';
+import {
+  CURRENT_STAFFING_KEY,
+  type CurrentStaffingArchive,
+  currentStaffingArchiveHash,
+} from '../../src/lib/current-staffing-source.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import type { WorkerEnv } from '../../src/types/env.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
@@ -790,6 +795,60 @@ describe('annual live operator and presentation surfaces', () => {
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(JSON.stringify(body)).not.toContain('contact_history');
     expect((body as { positions: { forced: boolean }[] }).positions[0]?.forced).toBe(false);
+  });
+
+  it('shows current directory seat and A-Day in the member-safe presentation without changing bid state', async () => {
+    const archive: CurrentStaffingArchive = {
+      v: 1,
+      source: { name: 'directory.csv', sha256: 'c'.repeat(64) },
+      snapshotAt: '2000-01-01T00:00:00.000Z',
+      rows: [
+        {
+          employeeId: '2',
+          sourceRank: 'Firefighter',
+          shift: 'B',
+          station: 'Station 6',
+          unit: 'Fire Boat 6',
+          positionLabel: 'Firefighter ENG',
+          aDayGroup: 'G2',
+          sourceRow: 12,
+        },
+      ],
+    };
+    const receipt = {
+      archive,
+      sha256: await currentStaffingArchiveHash(archive),
+      publishedAt: '2000-01-01T00:00:00.000Z',
+      publishedBy: '99',
+    };
+    const get = async (key: string) =>
+      key === CURRENT_STAFFING_KEY ? { json: async () => receipt } : null;
+    const before = h.sqlite.serialize();
+    const response = await app.fetch(
+      new Request(`http://x/api/presentation?bidSessionId=${SESSION}`, {
+        headers: { Authorization: `Bearer ${await token('member', 1)}` },
+      }),
+      { ...h.env, JWT_SIGNING_KEY: KEY, R2_EXPORTS: { get } as unknown as WorkerEnv['R2_EXPORTS'] },
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      current_bidder: {
+        member_id: 2,
+        current_assignment: {
+          position_id: null,
+          position_name: 'Firefighter ENG',
+          shift: 'B',
+          station: 'Station 6',
+          unit: 'Fire Boat 6',
+          a_day_group: 'G2',
+          source_name: 'directory.csv',
+        },
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('employeeId');
+    expect(JSON.stringify(body)).not.toContain('sourceSha256');
+    deepStrictEqual(h.sqlite.serialize(), before);
   });
 
   it('keeps Chief assignments and queue frozen while the canonical bid continues', async () => {
