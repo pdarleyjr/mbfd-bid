@@ -124,10 +124,10 @@ export function AdministratorOverride(props: Props) {
     requestGeneration.current += 1;
     setDraft((current) => ({
       ...current,
-      action: 'AWARD',
+      action: intent.action ?? 'AWARD',
       memberId: intent.memberId,
       positionId: intent.positionId ?? '',
-      aDay: '',
+      aDay: intent.aDay ?? '',
       termConfirmed: false,
       termEvidence: '',
       deferADay: intent.deferADay === true,
@@ -135,6 +135,7 @@ export function AdministratorOverride(props: Props) {
     setReview(null);
     setAcknowledged(false);
     setNotice(null);
+    setShiftFilter(intent.shift ?? '');
     setOpen(true);
   }, [operator?.overrideIntent, props.allowed]);
   const memberIds = [...new Set(props.memberIds)].filter((id) => props.members[String(id)]);
@@ -656,7 +657,15 @@ export function AdministratorOverride(props: Props) {
                   aria-label="Administrator override open position"
                   value={draft.positionId}
                   disabled={controlsBusy}
-                  onChange={(event) => change({ positionId: event.target.value, aDay: '' })}
+                  onChange={(event) => {
+                    const positionId = event.target.value;
+                    const position = props.positions.find(
+                      (candidate) => candidate.id === positionId,
+                    );
+                    const nextGroups: readonly string[] =
+                      position?.shift === 'D' ? WeekdaySchema.options : ADayGroupIdSchema.options;
+                    change({ positionId, aDay: nextGroups.includes(draft.aDay) ? draft.aDay : '' });
+                  }}
                 >
                   <option value="">Choose an open position</option>
                   {filteredPositions.map((position) => (

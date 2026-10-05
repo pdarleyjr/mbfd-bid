@@ -10,9 +10,19 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { OperatorADayProjection } from './operator-a-day-board';
+import type { OperatorSpecialtyRoster } from './operator-specialty-roster';
 
 type PositionIntent = { memberId: number; positionId: string; nonce: number };
-type OverrideIntent = { memberId: number; positionId?: string; deferADay?: boolean; nonce: number };
+type OverrideIntent = {
+  memberId: number;
+  positionId?: string;
+  deferADay?: boolean;
+  aDay?: string;
+  action?: 'AWARD' | 'A_DAY';
+  shift?: string;
+  nonce: number;
+};
 interface OperatorContext {
   selectedMemberId: number | null;
   activeMemberId: number | null;
@@ -22,6 +32,11 @@ interface OperatorContext {
   choosePosition: (positionId: string) => void;
   overrideIntent: OverrideIntent | null;
   requestOverride: (positionId?: string, memberId?: number, deferADay?: boolean) => void;
+  requestADay: (aDay: string, memberId?: number, positionId?: string, shift?: string) => void;
+  aDayProjection: OperatorADayProjection | null;
+  setADayProjection: (projection: OperatorADayProjection | null) => void;
+  specialtyRoster: OperatorSpecialtyRoster | null;
+  setSpecialtyRoster: (projection: OperatorSpecialtyRoster | null) => void;
   overrideAllowed: boolean;
   setOverrideAllowed: (allowed: boolean) => void;
 }
@@ -37,6 +52,8 @@ export function BidOperatorProvider({
   const [positionIntent, setPositionIntent] = useState<PositionIntent | null>(null);
   const [overrideIntent, setOverrideIntent] = useState<OverrideIntent | null>(null);
   const [overrideAllowed, setOverrideAllowed] = useState(false);
+  const [aDayProjection, setADayProjection] = useState<OperatorADayProjection | null>(null);
+  const [specialtyRoster, setSpecialtyRoster] = useState<OperatorSpecialtyRoster | null>(null);
   const selectMember = useCallback((id: number) => setSelectedMemberId(id), []);
   const setActiveMember = useCallback((id: number | null) => {
     const previous = activeMemberRef.current;
@@ -69,6 +86,21 @@ export function BidOperatorProvider({
     },
     [selectedMemberId],
   );
+  const requestADay = useCallback(
+    (aDay: string, memberId?: number, positionId?: string, shift?: string) => {
+      const targetMemberId = memberId ?? selectedMemberId;
+      if (targetMemberId === null) return;
+      setOverrideIntent((previous) => ({
+        memberId: targetMemberId,
+        aDay,
+        action: positionId ? 'A_DAY' : 'AWARD',
+        ...(positionId ? { positionId } : {}),
+        ...(shift ? { shift } : {}),
+        nonce: (previous?.nonce ?? 0) + 1,
+      }));
+    },
+    [selectedMemberId],
+  );
   const value = useMemo(
     () => ({
       selectedMemberId,
@@ -79,6 +111,11 @@ export function BidOperatorProvider({
       choosePosition,
       overrideIntent,
       requestOverride,
+      requestADay,
+      aDayProjection,
+      setADayProjection,
+      specialtyRoster,
+      setSpecialtyRoster,
       overrideAllowed,
       setOverrideAllowed,
     }),
@@ -91,6 +128,9 @@ export function BidOperatorProvider({
       choosePosition,
       overrideIntent,
       requestOverride,
+      requestADay,
+      aDayProjection,
+      specialtyRoster,
       overrideAllowed,
     ],
   );

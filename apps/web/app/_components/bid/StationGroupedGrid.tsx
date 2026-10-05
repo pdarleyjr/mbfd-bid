@@ -21,6 +21,8 @@ interface Props {
   operatorLayout?: boolean;
   selectedRank?: string | null;
   toolbar?: ReactNode;
+  boardToggle?: ReactNode;
+  alternateBoard?: ReactNode;
 }
 
 // Display order for stations matches the Excel bid sheet — combat first
@@ -108,6 +110,8 @@ export function StationGroupedGrid({
   operatorLayout = false,
   selectedRank = null,
   toolbar,
+  boardToggle,
+  alternateBoard,
 }: Props) {
   const [localShift, setLocalShift] = useState<Shift>(defaultShift);
   const shift = selectedShift ?? localShift;
@@ -164,7 +168,8 @@ export function StationGroupedGrid({
               counts={counts}
               compact={operatorLayout}
             />
-            {operatorLayout ? (
+            {boardToggle}
+            {operatorLayout && !alternateBoard ? (
               <div
                 className={styles.viewTools}
                 onKeyDown={(event) => {
@@ -217,93 +222,97 @@ export function StationGroupedGrid({
               </div>
             ) : null}
           </div>
-          <div
-            id={`shift-panel-${shift}`}
-            role="tabpanel"
-            aria-labelledby={`shift-tab-${shift}`}
-            className={
-              operatorLayout
-                ? styles.operatorGrid
-                : 'grid gap-2 p-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
-            }
-          >
-            {orderedStations.map((stationName) => {
-              const apparatusMap = grouped.get(stationName);
-              if (!apparatusMap || apparatusMap.size === 0) return null;
-              const total = countStationPositions(apparatusMap);
-              return (
-                <article
-                  key={stationName}
-                  data-testid={`station-${stationName.replace(/\W+/g, '-').toLowerCase()}`}
-                  className={
-                    operatorLayout
-                      ? styles.station
-                      : 'flex flex-col gap-1.5 rounded border border-border bg-background p-1.5'
-                  }
-                >
-                  <header
+          {alternateBoard ?? (
+            <div
+              id={`shift-panel-${shift}`}
+              role="tabpanel"
+              aria-labelledby={`shift-tab-${shift}`}
+              className={
+                operatorLayout
+                  ? styles.operatorGrid
+                  : 'grid gap-2 p-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+              }
+            >
+              {orderedStations.map((stationName) => {
+                const apparatusMap = grouped.get(stationName);
+                if (!apparatusMap || apparatusMap.size === 0) return null;
+                const total = countStationPositions(apparatusMap);
+                return (
+                  <article
+                    key={stationName}
+                    data-testid={`station-${stationName.replace(/\W+/g, '-').toLowerCase()}`}
                     className={
                       operatorLayout
-                        ? styles.stationHeader
-                        : 'rounded bg-muted px-2 py-1 text-center text-xs font-bold text-foreground'
+                        ? styles.station
+                        : 'flex flex-col gap-1.5 rounded border border-border bg-background p-1.5'
                     }
                   >
-                    {stationName}
-                    <span className="ml-2 text-[10px] font-normal text-muted-foreground">
-                      {total} positions
-                    </span>
-                  </header>
-                  <div className={operatorLayout ? styles.stationBody : 'flex flex-col gap-2'}>
-                    {Array.from(apparatusMap.entries()).map(([apparatus, positions]) => (
-                      <section
-                        key={apparatus}
-                        data-testid={`apparatus-${apparatus.replace(/\W+/g, '-').toLowerCase()}`}
-                        className="flex flex-col"
-                      >
-                        <h3
-                          className={
-                            operatorLayout
-                              ? styles.unitHeader
-                              : 'flex items-center justify-between rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground'
-                          }
+                    <header
+                      className={
+                        operatorLayout
+                          ? styles.stationHeader
+                          : 'rounded bg-muted px-2 py-1 text-center text-xs font-bold text-foreground'
+                      }
+                    >
+                      {stationName}
+                      <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+                        {total} positions
+                      </span>
+                    </header>
+                    <div className={operatorLayout ? styles.stationBody : 'flex flex-col gap-2'}>
+                      {Array.from(apparatusMap.entries()).map(([apparatus, positions]) => (
+                        <section
+                          key={apparatus}
+                          data-testid={`apparatus-${apparatus.replace(/\W+/g, '-').toLowerCase()}`}
+                          className="flex flex-col"
                         >
-                          <span>{apparatus}</span>
-                          <span className="font-normal text-muted-foreground">
-                            {positions.length}
-                          </span>
-                        </h3>
-                        <div className={operatorLayout ? 'flex flex-col' : 'flex flex-col gap-0.5'}>
-                          {positions.map((position) =>
-                            operatorLayout ? (
-                              <OperatorPositionCell
-                                key={position.id}
-                                position={position}
-                                members={members}
-                                onClick={onPositionClick}
-                                openOnly={view === 'open'}
-                              />
-                            ) : (
-                              <RichPositionCell
-                                key={position.id}
-                                position={position}
-                                members={members}
-                                onClick={onPositionClick}
-                              />
-                            ),
-                          )}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                </article>
-              );
-            })}
-            {orderedStations.length === 0 ? (
-              <p className="p-3 text-sm text-muted-foreground">
-                No seats in this view. Choose another shift or show all seats.
-              </p>
-            ) : null}
-          </div>
+                          <h3
+                            className={
+                              operatorLayout
+                                ? styles.unitHeader
+                                : 'flex items-center justify-between rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground'
+                            }
+                          >
+                            <span>{apparatus}</span>
+                            <span className="font-normal text-muted-foreground">
+                              {positions.length}
+                            </span>
+                          </h3>
+                          <div
+                            className={operatorLayout ? 'flex flex-col' : 'flex flex-col gap-0.5'}
+                          >
+                            {positions.map((position) =>
+                              operatorLayout ? (
+                                <OperatorPositionCell
+                                  key={position.id}
+                                  position={position}
+                                  members={members}
+                                  onClick={onPositionClick}
+                                  openOnly={view === 'open'}
+                                />
+                              ) : (
+                                <RichPositionCell
+                                  key={position.id}
+                                  position={position}
+                                  members={members}
+                                  onClick={onPositionClick}
+                                />
+                              ),
+                            )}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+              {orderedStations.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  No seats in this view. Choose another shift or show all seats.
+                </p>
+              ) : null}
+            </div>
+          )}
         </>
       )}
     </section>

@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import type { StoreApi } from 'zustand';
 import { useStore } from 'zustand';
 import { useBidStoreContext } from '../../bid/_hooks/BidStoreContext';
-import type { BidStoreState } from '../../bid/_hooks/useBidStore';
+import type { BidStoreState, Fill } from '../../bid/_hooks/useBidStore';
+import { getForcedAssignmentLabel, getSeatAppearance } from './seat-appearance';
 import { type MemberLite, type PositionMeta, shortRank } from './types';
 
 interface Props {
@@ -26,20 +27,22 @@ export function RichPositionCell({ position, members, onClick }: Props) {
   return store ? (
     <LiveRichCell store={store} position={position} members={members} onClick={onClick} />
   ) : (
-    <StaticRichCell position={position} members={members} fill={null} />
+    <StaticRichCell position={position} members={members} fill={null} onClick={onClick} />
   );
 }
 
 interface CellBodyProps {
   position: PositionMeta;
   members: Record<string, MemberLite>;
-  fill: { memberId: number; ordinal: number } | null;
+  fill: Fill | null;
   pending?: boolean | undefined;
   onClick?: ((positionId: string) => void) | undefined;
 }
 
 function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) {
   const filledBy = fill ? members[String(fill.memberId)] : null;
+  const appearance = getSeatAppearance(position);
+  const forcedLabel = getForcedAssignmentLabel(fill?.forced);
   const state: 'filled' | 'pending-mine' | 'open' = fill
     ? 'filled'
     : pending
@@ -49,35 +52,51 @@ function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) 
   const baseClass = [
     'flex w-full flex-col rounded border px-2 py-1 text-left text-xs leading-snug transition-colors duration-fast ease-out-quart',
     state === 'filled'
-      ? 'border-emerald-300 bg-emerald-50'
+      ? 'border-emerald-700'
       : state === 'pending-mine'
-        ? 'border-amber-300 bg-amber-50'
+        ? 'border-amber-700'
         : isInteractive
-          ? 'border-border bg-white hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
-          : 'border-border bg-white hover:border-border',
+          ? 'border-border hover:border-blue-600 hover:brightness-95 cursor-pointer'
+          : 'border-border',
   ].join(' ');
 
   const inner = (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[11px] font-semibold text-foreground">{position.id}</span>
-        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+        <span className="font-mono text-[11px] font-semibold">{position.id}</span>
+        <span
+          className="text-[9px] uppercase tracking-wide"
+          style={{ color: appearance.mutedColor }}
+        >
           {position.unit}
         </span>
       </div>
-      <div className="text-xs font-semibold text-foreground">
-        <span className="text-muted-foreground">{shortRank(position.rankRequired)} · </span>
+      <div className="flex items-center gap-1 text-xs font-semibold">
+        <span style={{ color: appearance.mutedColor }}>{shortRank(position.rankRequired)} · </span>
         {position.positionName}
+        {forcedLabel ? (
+          <span
+            role="img"
+            aria-label={forcedLabel}
+            title={forcedLabel}
+            data-testid={`forced-marker-${position.id}`}
+            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-amber-900 bg-white text-xs font-extrabold text-amber-950"
+          >
+            !
+          </span>
+        ) : null}
       </div>
       <div className="text-[11px]">
         {filledBy ? (
-          <span data-testid={`cell-filled-${position.id}`} className="text-emerald-800">
+          <span data-testid={`cell-filled-${position.id}`} className="font-semibold">
             {shortRank(filledBy.rank)} {filledBy.firstName} {filledBy.lastName}
           </span>
         ) : pending ? (
-          <span className="italic text-amber-700">Submitting…</span>
+          <span className="italic" style={{ color: appearance.mutedColor }}>
+            Submitting…
+          </span>
         ) : (
-          <span className="text-muted-foreground">Open</span>
+          <span style={{ color: appearance.mutedColor }}>Open</span>
         )}
       </div>
     </>
@@ -88,13 +107,21 @@ function CellBody({ position, members, fill, pending, onClick }: CellBodyProps) 
       type="button"
       data-testid={`position-cell-${position.id}`}
       data-state={state}
+      data-seat-role={appearance.role}
+      style={{ backgroundColor: appearance.backgroundColor, color: appearance.color }}
       className={baseClass}
       onClick={() => onClick(position.id)}
     >
       {inner}
     </Button>
   ) : (
-    <div data-testid={`position-cell-${position.id}`} data-state={state} className={baseClass}>
+    <div
+      data-testid={`position-cell-${position.id}`}
+      data-state={state}
+      data-seat-role={appearance.role}
+      style={{ backgroundColor: appearance.backgroundColor, color: appearance.color }}
+      className={baseClass}
+    >
       {inner}
     </div>
   );
@@ -104,12 +131,14 @@ function StaticRichCell({
   position,
   members,
   fill,
+  onClick,
 }: {
   position: PositionMeta;
   members: Record<string, MemberLite>;
-  fill: { memberId: number; ordinal: number } | null;
+  fill: Fill | null;
+  onClick?: ((positionId: string) => void) | undefined;
 }) {
-  return <CellBody position={position} members={members} fill={fill} />;
+  return <CellBody position={position} members={members} fill={fill} onClick={onClick} />;
 }
 
 function LiveRichCell({
@@ -129,7 +158,7 @@ function LiveRichCell({
     <CellBody
       position={position}
       members={members}
-      fill={fill ? { memberId: fill.memberId, ordinal: fill.ordinal } : null}
+      fill={fill}
       pending={pending}
       onClick={onClick}
     />
