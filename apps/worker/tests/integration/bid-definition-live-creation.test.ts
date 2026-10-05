@@ -6,12 +6,20 @@ import {
   LiveBidActionSchema,
 } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type JsonValue, canonicalize } from '../../src/audit/canonical-json.js';
 import { getDb } from '../../src/db/index.js';
 import { app } from '../../src/index.js';
+import { bidContentHash } from '../../src/lib/bid-definition-content.js';
 import { captureBidDefinitionSource } from '../../src/lib/bid-definition-source.js';
 import { saveBidDefinition } from '../../src/lib/bid-definition-store.js';
 import { loadBidDefinitionVersion } from '../../src/lib/bid-definition-version.js';
+import { bidLaunchContextForSnapshot } from '../../src/lib/bid-launch-review.js';
 import { loadFrozenSessionBidPolicy } from '../../src/lib/bid-policy.js';
+import {
+  RANK_SOURCE_OPERATION,
+  type RankSourceRecord,
+  rankSourceKey,
+} from '../../src/lib/bid-rank-source.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import { evaluateLiveBidReadiness } from '../../src/lib/live-bid-readiness.js';
 import { type TestD1, setupTestD1, teardownTestD1 } from './helpers/test-d1.js';
@@ -671,6 +679,133 @@ describe('managed Live creation from sealed versions and separate runtime author
     });
     deepStrictEqual(h.sqlite.serialize(), before);
     expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bid_sessions').get()).toEqual({ n: 0 });
+  });
+
+  it('replays the original immutable Live creation after a pre-start source receipt changes its Start review', async () => {
+    await completeEvidence();
+    const body = await creationBody();
+    const key = 'synthetic-live-original-source-replay';
+    const response = await request(`bid/${YEAR}/live-sessions`, body, { key });
+    expect(response.status, await response.clone().text()).toBe(201);
+    const created = (await response.json()) as { id: string; replayed: boolean };
+    const originalRow = h.sqlite
+      .prepare(
+        'SELECT snapshot_json,snapshot_sha256 FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+      )
+      .get(created.id) as { snapshot_json: string; snapshot_sha256: string };
+    const appliedAt = Date.now();
+    const archiveSha256 = 'c'.repeat(64);
+    const record: RankSourceRecord = {
+      v: 1,
+      year: YEAR,
+      sessionId: created.id,
+      versionId: body.versionId,
+      versionSha256: body.versionSha256,
+      baseSnapshotSha256: originalRow.snapshot_sha256,
+      archiveSha256,
+      appliedBy: String(ACTOR),
+      appliedAt,
+      members: [
+        {
+          memberId: ACTOR,
+          employeeId: 'synthetic-live-admin',
+          scoreReferenceEvidence: [
+            {
+              v: 1,
+              listId: 'SYNTHETIC_FINAL',
+              positionIds: ['synthetic-live-seat'],
+              points: 2,
+              soPoints: 0,
+              moPoints: 0,
+              sourceName: 'Synthetic final ranking.pdf',
+              sourceSha256: 'd'.repeat(64),
+              sourceLocation: { page: 1, textLine: 10 },
+              literalTotal: 2,
+              printedBidOrder: 1,
+              sourcePriority: 1,
+            },
+          ],
+        },
+      ],
+    };
+    const sha256 = bidContentHash(canonicalize(record as unknown as JsonValue));
+    h.sqlite
+      .prepare(`INSERT INTO admin_configuration_receipts
+      (idempotency_key,actor_subject,operation,request_json,response_json,created_at)
+      VALUES (?,?,?,?,?,?)`)
+      .run(
+        rankSourceKey(created.id, archiveSha256),
+        String(ACTOR),
+        RANK_SOURCE_OPERATION,
+        JSON.stringify({
+          archiveSha256,
+          expectedSnapshotSha256: originalRow.snapshot_sha256,
+          expectedVersionSha256: body.versionSha256,
+        }),
+        JSON.stringify({ record, sha256 }),
+        appliedAt,
+      );
+    const effective = await loadFrozenSessionBidPolicy(getDb(h.env.DB), created.id);
+    if (!effective.ok) throw new Error(JSON.stringify(effective));
+    expect(effective.snapshot).toMatchObject({ scoreReferenceSource: { receiptSha256: sha256 } });
+    expect(bidLaunchContextForSnapshot(effective.snapshot, 'live')?.contextSha256).not.toBe(
+      body.expectedContextSha256,
+    );
+    expect(
+      h.sqlite
+        .prepare(
+          'SELECT snapshot_json,snapshot_sha256 FROM bid_session_policy_snapshots WHERE bid_session_id=?',
+        )
+        .get(created.id),
+    ).toEqual(originalRow);
+    const beforeReplay = h.sqlite.serialize();
+    const replay = await request(`bid/${YEAR}/live-sessions`, body, { key });
+    expect(replay.status, await replay.clone().text()).toBe(201);
+    expect(await replay.json()).toEqual({ ...created, replayed: true });
+    deepStrictEqual(h.sqlite.serialize(), beforeReplay);
+    expect(
+      h.sqlite
+        .prepare('SELECT current_phase,current_bidder_id FROM bid_sessions WHERE id=?')
+        .get(created.id),
+    ).toEqual({ current_phase: 'config', current_bidder_id: null });
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM canonical_bid_session_state').get()).toEqual(
+      { n: 0 },
+    );
+    expect(h.sqlite.prepare('SELECT COUNT(*) AS n FROM bids').get()).toEqual({ n: 0 });
+    const mockPreviewResponse = await request(`bid/${YEAR}/preview`, {
+      kind: 'mock',
+      ...selection(),
+    });
+    expect(mockPreviewResponse.status, await mockPreviewResponse.clone().text()).toBe(200);
+    const mockPreview = (await mockPreviewResponse.json()) as {
+      wouldAllowCreateMock: boolean;
+      contextSha256: string;
+      runtimeSourceToken: string;
+      launchReview: { advisorySha256: string; requiresAcknowledgement: boolean };
+    };
+    expect(mockPreview.wouldAllowCreateMock).toBe(true);
+    const mockBody = {
+      ...selection(),
+      expectedContextSha256: mockPreview.contextSha256,
+      expectedSourceToken: mockPreview.runtimeSourceToken,
+      ...(mockPreview.launchReview.requiresAcknowledgement
+        ? {
+            launchAcknowledgement: { advisorySha256: mockPreview.launchReview.advisorySha256 },
+          }
+        : {}),
+    };
+    const mockKey = 'synthetic-inherited-source-replay';
+    const mockResponse = await request(`bid/${YEAR}/mock-sessions`, mockBody, { key: mockKey });
+    expect(mockResponse.status, await mockResponse.clone().text()).toBe(201);
+    const mockCreated = (await mockResponse.json()) as { id: string; replayed: boolean };
+    const mockPolicy = await loadFrozenSessionBidPolicy(getDb(h.env.DB), mockCreated.id);
+    if (!mockPolicy.ok) throw new Error(JSON.stringify(mockPolicy));
+    expect(mockPolicy.snapshot).toMatchObject({ scoreReferenceSource: { receiptSha256: sha256 } });
+    const beforeMockReplay = h.sqlite.serialize();
+    const mockReplay = await request(`bid/${YEAR}/mock-sessions`, mockBody, { key: mockKey });
+    expect(mockReplay.status, await mockReplay.clone().text()).toBe(201);
+    expect(await mockReplay.json()).toEqual({ ...mockCreated, replayed: true });
+    deepStrictEqual(h.sqlite.serialize(), beforeMockReplay);
   });
 
   it.each(['context', 'source', 'version', 'credentials'] as const)(

@@ -749,6 +749,14 @@ router.post(
       if (current.currentPhase !== 'config') {
         return c.json({ error: 'invalid_state', current_phase: current.currentPhase }, 409);
       }
+      const currentPolicy = await loadBidSessionPolicySnapshot(db, id);
+      if (
+        !currentPolicy.snapshot ||
+        currentPolicy.snapshot.v !== 3 ||
+        currentPolicy.snapshot.scoreReferenceSource?.receiptSha256 !==
+          frozenPolicy.snapshot.scoreReferenceSource?.receiptSha256
+      )
+        return c.json({ error: 'launch_review_changed' }, 409);
       const results = await c.env.DB.batch(statements);
       if (
         results[sessionUpdateIndex]?.meta.changes !== 1 ||

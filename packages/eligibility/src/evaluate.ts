@@ -12,6 +12,7 @@ import { configuredChannel } from './points/configured.js';
 import { computeMoPoints } from './points/mo-pool.js';
 import { computeSoPoints } from './points/so-pool.js';
 import { computePoints } from './points/sum.js';
+import { referencePriority, scoreReferenceForPositions } from './score-reference.js';
 import type { EligibilityReason, EligibilityResult, Member, PositionRule } from './types.js';
 
 export function evaluateEligibility(member: Member, rule: PositionRule): EligibilityResult {
@@ -106,6 +107,44 @@ function evaluateWithChannels(
       soPoints: 0,
       moPoints: 0,
       breakdown: { total: 0, soTotal: 0, moTotal: 0, itemized: [] },
+    };
+  }
+
+  const reference = scoreReferenceForPositions(member.scoreReferenceEvidence, [rule.positionId]);
+  if (reference) {
+    const itemized = (points: number) => [
+      {
+        credential: `Published preference credit · ${reference.listId}`,
+        awarded: points,
+        reason: `${reference.sourceName}; page ${reference.sourceLocation.page}, line ${reference.sourceLocation.textLine}; ${reference.sourceSha256}; qualification validity unchanged`,
+      },
+    ];
+    if (channels) {
+      channels.total = { total: reference.points, itemized: itemized(reference.points) };
+      channels.so = { total: reference.soPoints, itemized: itemized(reference.soPoints) };
+      channels.mo = { total: reference.moPoints, itemized: itemized(reference.moPoints) };
+    }
+    return {
+      eligible: true,
+      reasons,
+      ...(rule.pointsPreference.scoring?.orderedPreference === undefined
+        ? {}
+        : {
+            orderedPreference: evaluateOrderedPreference(
+              activeMember,
+              rule.pointsPreference.scoring.orderedPreference,
+            ),
+          }),
+      scoreReferencePriority: referencePriority(reference),
+      points: reference.points,
+      soPoints: reference.soPoints,
+      moPoints: reference.moPoints,
+      breakdown: {
+        total: reference.points,
+        soTotal: reference.soPoints,
+        moTotal: reference.moPoints,
+        itemized: itemized(reference.points),
+      },
     };
   }
 

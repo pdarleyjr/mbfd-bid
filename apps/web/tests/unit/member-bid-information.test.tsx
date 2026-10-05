@@ -274,6 +274,69 @@ describe('member information focused workspace', () => {
       expect(panel().textContent).not.toContain('C Shift · Rescue 3');
     },
   );
+  it('shows all published lists as collapsed source references in both member tabs without inventing missing dates or order', async () => {
+    const data = formResponse();
+    data.rankReferences = [
+      {
+        listId: 'FIRE_INVESTIGATOR',
+        title: 'Fire Investigator',
+        source: {
+          name: 'Final investigator.pdf',
+          sha256: 'e'.repeat(64),
+          pages: 1,
+          generatedAt: [],
+        },
+        columns: ['total', 'preferences'],
+        columnLabels: { total: 'Total', preferences: 'Preferences' },
+        row: {
+          employeeId: 'E17',
+          sourceMemberName: 'Member Test',
+          sourceRank: 'Captain',
+          bidOrder: null,
+          values: { total: 12, preferences: '<script>literal source</script>' },
+          provenance: [{ page: 1, textLine: 3, bbox: [10, 20, 30, 40] }],
+        },
+      },
+      {
+        listId: 'STATION_TWO_LIEUTENANT',
+        title: 'Station 2 Lieutenant',
+        source: {
+          name: 'Final lieutenant.pdf',
+          sha256: 'f'.repeat(64),
+          pages: 1,
+          generatedAt: ['10/5/2026 @ 8:30 AM'],
+        },
+        columns: ['drone'],
+        columnLabels: { drone: 'Drone' },
+        row: {
+          employeeId: 'E17',
+          sourceMemberName: 'Member Test',
+          sourceRank: 'Captain',
+          bidOrder: 13,
+          values: { drone: 1 },
+          provenance: [{ page: 1, textLine: 4, bbox: [10, 30, 30, 40] }],
+        },
+      },
+    ];
+    fetcher.mockImplementation(async (input: RequestInfo | URL) =>
+      response(String(input).includes('/bid-forms/') ? data : personResponse()),
+    );
+    await render();
+    await open();
+    await tab('Credentials');
+    expect(panel().textContent).toContain('Fire Investigator');
+    expect(panel().textContent).toContain('Station 2 Lieutenant · Published order 13');
+    expect(panel().textContent).toContain('<script>literal source</script>');
+    expect(panel().querySelector('script')).toBeNull();
+    expect(panel().textContent).not.toContain('Published specialty reference');
+    expect([...panel().querySelectorAll('details')].every((details) => !details.open)).toBe(true);
+    await tab('Bid form');
+    expect(panel().textContent).toContain('Final investigator.pdf');
+    expect(panel().textContent).toContain('Page 1, line 3');
+    expect(panel().textContent).toContain('Generated 10/5/2026 @ 8:30 AM');
+    expect(panel().textContent).not.toContain('Published order 0');
+    expect(requests.every(({ init }) => !init?.method || init.method === 'GET')).toBe(true);
+  });
   it('supports error retry without showing another member’s form', async () => {
     let attempts = 0;
     fetcher.mockImplementation(async (input: RequestInfo | URL) => {

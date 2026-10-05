@@ -17,6 +17,21 @@ from pathlib import Path
 import openpyxl
 
 
+FORM_HEADERS = (
+    ("Name", "Employee ID", "Rank", "Attending Teams", "Phone #1", "Phone #2", "Shift", "Unit", "Shift2", "Unit2", "Shift3", "Unit3", "A-Day Preference #1", "A-Day Preference #2", "A-Day Preference #3", "A-Day Preference #4"),
+    ("Name", "Employee ID", "Rank", "Teams?", "Phone #1", "Phone #2", "Shift", "Unit", "Shift2", "Unit3", "Shift4", "Unit5", "A-Day  #1", "A-Day  #2", "A-Day  #3", "A-Day #4"),
+)
+
+
+def form_sheet(book):
+    """Recognize one supported export by its complete, ordered row-two schema."""
+    matches = [sheet for sheet in book
+               if tuple(cell.value for cell in next(sheet.iter_rows(min_row=2, max_row=2), ())) in FORM_HEADERS]
+    if len(matches) != 1:
+        raise ValueError("Expected exactly one sheet with supported form headers")
+    return matches[0]
+
+
 def normalized(value):
     return "".join(c for c in value.casefold() if c.isalnum())
 
@@ -38,21 +53,25 @@ def build_packet(args):
     workbook = Path(args.workbook)
     directory_path = Path(args.directory)
     resolutions_path = Path(args.identity_resolutions)
-    directory = list(csv.DictReader(directory_path.open(encoding="utf-8-sig", newline="")))
+    workbook_sha = digest(workbook)
+    with directory_path.open(encoding="utf-8-sig", newline="") as stream:
+        directory = list(csv.DictReader(stream))
     # Read the independently verified backup into an isolated in-memory database.
     db = sqlite3.connect(":memory:")
     db.executescript(Path(args.canonical_backup).read_text(encoding="utf-8-sig"))
     canonical = [dict(zip(["id", "employeeId", "firstName", "lastName", "rank"], row)) for row in db.execute("SELECT id,employee_id,first_name,last_name,rank FROM members")]
     rank_codes = {"Firefighter": "FF", "Lieutenant": "LT", "Captain": "CPT", "Division Chief": "DC"}
-    resolutions = json.loads(resolutions_path.read_text(encoding="utf-8-sig"))["rows"]
+    resolution_source = json.loads(resolutions_path.read_text(encoding="utf-8-sig"))
+    if resolution_source.get("source", workbook.name) != workbook.name:
+        raise ValueError("Approved identity resolutions are for a different workbook")
+    if resolution_source.get("sourceSha256", workbook_sha) != workbook_sha:
+        raise ValueError("Approved identity resolutions do not match this workbook hash")
+    resolutions = resolution_source["rows"]
     resolved_by_row = {row["sourceRow"]: row for row in resolutions}
     if len(resolved_by_row) != len(resolutions):
         raise ValueError("Duplicate approved resolution rows")
     book = openpyxl.load_workbook(workbook, read_only=True, data_only=False)
-    sheet = book["Bid Forms "]
-    expected_headers = ["Name", "Employee ID", "Rank", "Attending Teams", "Phone #1", "Phone #2", "Shift", "Unit", "Shift2", "Unit2", "Shift3", "Unit3", "A-Day Preference #1", "A-Day Preference #2", "A-Day Preference #3", "A-Day Preference #4"]
-    if [cell.value for cell in next(sheet.iter_rows(min_row=2, max_row=2))] != expected_headers:
-        raise ValueError("Unexpected form headers")
+    sheet = form_sheet(book)
     forms = []
     applied = set()
     for row in sheet.iter_rows(min_row=3):
@@ -66,7 +85,8 @@ def build_packet(args):
         effective_id = employee_id
         approved = resolved_by_row.get(source_row)
         if approved:
-            if approved["sourceEmployeeId"] != employee_id or approved["sourceName"] != values[0]:
+            if (approved["sourceEmployeeId"] != employee_id or approved["sourceName"] != values[0]
+                    or approved.get("sourceRank", values[2]) != values[2]):
                 raise ValueError(f"Approved correction does not match original source row {source_row}")
             effective_id = approved["resolvedEmployeeId"]
         matches = [member for member in canonical if member["employeeId"] == effective_id
@@ -96,13 +116,16 @@ def build_packet(args):
             applied.add(source_row)
             form["identityResolution"] = {"employeeId": effective_id, "method": "AUTHORITATIVE_DIRECTORY_CORRECTION",
                 "source": {"name": directory_path.name, "sha256": digest(directory_path)},
-                "sourceLocation": f"CSV row {directory_row}; independently confirmed by MASTER Personnel and canonical directory",
+                "sourceLocation": f"CSV row {directory_row}; independently confirmed by canonical directory",
                 "discrepancy": f"Submitted employee ID {employee_id}; linked to employee ID {effective_id} using the authoritative directory's exact name and rank. Original submission retained."}
         forms.append(form)
     if applied != set(resolved_by_row):
         raise ValueError("Not every approved correction was applied")
     not_submitted = []
-    for row in book["DID NOT SUBMIT"].iter_rows():
+    # A final activity export may contain submissions only. Absence is unknown,
+    # not an assertion that a member failed to submit a form.
+    non_submission_rows = book["DID NOT SUBMIT"].iter_rows() if "DID NOT SUBMIT" in book.sheetnames else ()
+    for row in non_submission_rows:
         source_name = read_literal(row[0])
         if not source_name:
             continue
@@ -118,7 +141,7 @@ def build_packet(args):
     not_ids = [row["employeeId"] for row in not_submitted]
     if len(set(form_ids)) != len(form_ids) or len(set(not_ids)) != len(not_ids) or set(form_ids) & set(not_ids):
         raise ValueError("Resolved source identity overlap or duplicate")
-    packet = {"v": 1, "year": args.year, "source": {"name": workbook.name, "sha256": digest(workbook)},
+    packet = {"v": 1, "year": args.year, "source": {"name": workbook.name, "sha256": workbook_sha},
               "forms": forms, "notSubmitted": not_submitted, "unlinkedNotSubmitted": []}
     if args.air_tech_rows:
         metadata = json.loads(Path(args.air_tech_metadata).read_text(encoding="utf-8-sig"))
@@ -139,6 +162,8 @@ def build_packet(args):
         if len({r["employeeId"] for r in references}) != len(references):
             raise ValueError("Duplicate Air Tech employee IDs")
         packet["airTechReferences"] = references
+    book.close()
+    db.close()
     return packet
 
 

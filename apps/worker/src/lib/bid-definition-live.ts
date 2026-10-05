@@ -1,5 +1,6 @@
 import {
   BidLaunchAcknowledgementSchema,
+  BidLaunchReviewSchema,
   type BidSessionPolicySnapshot,
   isLiveBidActionAuthorized,
 } from '@mbfd/shared';
@@ -10,13 +11,19 @@ import { getDb } from '../db/index.js';
 import type { WorkerEnv } from '../types/env.js';
 import { loadConfigurationReceipt } from './admin-configuration-receipt.js';
 import { assertBidDefinitionRunIntegrity } from './bid-definition-integrity.js';
+import { bidSnapshotSha256 } from './bid-definition-pin.js';
 import { prepareBidDefinitionRun } from './bid-definition-run.js';
 import {
+  bidLaunchContextForSnapshot,
   buildBidLaunchReview,
   checkBidLaunchAcknowledgement,
   loadStoredBidLaunchReview,
 } from './bid-launch-review.js';
-import { loadFrozenSessionBidPolicy, summarizeBidSessionPolicySnapshot } from './bid-policy.js';
+import {
+  loadFrozenSessionBidPolicy,
+  parseBidSessionPolicySnapshot,
+  summarizeBidSessionPolicySnapshot,
+} from './bid-policy.js';
 import { bidSessionCreationResponse, persistBidSessionCreation } from './bid-session-creation.js';
 import { evaluateLiveBidReadiness } from './live-bid-readiness.js';
 
@@ -100,6 +107,12 @@ export async function previewBidDefinitionLive(
       ...('tenureIssues' in prepared ? { tenureIssues: prepared.tenureIssues } : {}),
       ...('termIssues' in prepared ? { termIssues: prepared.termIssues } : {}),
     };
+  const launchContext = bidLaunchContextForSnapshot(prepared.snapshot, 'live');
+  if (launchContext === null)
+    return {
+      wouldAllowCreateLive: false as const,
+      policyError: 'session_launch_review_integrity_invalid',
+    };
   const operatorAuthorized = hasLiveCreationAuthority(prepared.snapshot, actorId);
   const readiness = await evaluateLiveBidReadiness({
     db: getDb(database),
@@ -119,15 +132,10 @@ export async function previewBidDefinitionLive(
     runtimeSourceToken: prepared.sourceGuard.token,
     pool: summarizeBidSessionPolicySnapshot(prepared.snapshot),
     readiness,
-    launchReview: buildBidLaunchReview(
-      {
-        mode: 'live',
-        versionId: input.versionId,
-        versionSha256: input.versionSha256,
-        contextSha256: prepared.pins.contextSha256,
-      },
-      [...(prepared.launchReview?.advisories ?? []), ...(readiness.launchAdvisories ?? [])],
-    ),
+    launchReview: buildBidLaunchReview(launchContext, [
+      ...(prepared.launchReview?.advisories ?? []),
+      ...(readiness.launchAdvisories ?? []),
+    ]),
   };
 }
 
@@ -188,12 +196,41 @@ export async function createBidDefinitionLive(
           action: LIVE_CREATION_ACTION,
         };
       }
-      const launch = await loadStoredBidLaunchReview(database, id.data, {
-        mode: 'live',
-        versionId: pins.bidVersionId,
-        versionSha256: pins.bidVersionSha256,
-        contextSha256: pins.contextSha256,
-      });
+      // Creation is replayed against its original sealed inputs. A later
+      // pre-start scoring receipt changes the Start review, not this receipt.
+      const originalRow = await database
+        .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
+        .bind(id.data)
+        .first<{ snapshot_json: string }>();
+      if (!originalRow || bidSnapshotSha256(originalRow.snapshot_json) !== pins.snapshotSha256)
+        return { ok: false as const, error: 'session_policy_snapshot_integrity_invalid' };
+      const { bidDefinition, ...originalMaterial } = JSON.parse(originalRow.snapshot_json);
+      const originalSnapshot = parseBidSessionPolicySnapshot(JSON.stringify(originalMaterial));
+      if (!originalSnapshot)
+        return { ok: false as const, error: 'session_policy_snapshot_integrity_invalid' };
+      const originalPinnedSnapshot = { ...originalSnapshot, bidDefinition };
+      const launchContext = bidLaunchContextForSnapshot(originalPinnedSnapshot, 'live');
+      if (launchContext === null)
+        return { ok: false as const, error: 'session_policy_snapshot_integrity_invalid' };
+      const originalReview =
+        prior.response.launchReview === undefined
+          ? null
+          : BidLaunchReviewSchema.safeParse(prior.response.launchReview);
+      if (
+        originalReview !== null &&
+        (!originalReview.success ||
+          (input.body.launchAcknowledgement !== undefined &&
+            input.body.launchAcknowledgement.advisorySha256 !== originalReview.data.advisorySha256))
+      )
+        return { ok: false as const, error: 'session_launch_review_integrity_invalid' };
+      const launch = await loadStoredBidLaunchReview(
+        database,
+        id.data,
+        launchContext,
+        originalReview?.success ? originalReview.data.advisorySha256 : undefined,
+      );
+      if (originalReview !== null && launch === null)
+        return { ok: false as const, error: 'session_launch_review_integrity_invalid' };
       if (launch !== null && !launch.ok) return launch;
       const expected = {
         ...bidSessionCreationResponse(id.data, policy.snapshot, false),
@@ -262,15 +299,13 @@ export async function createBidDefinitionLive(
   if (!readiness.canStartLiveBid)
     return { ok: false as const, error: 'readiness_blocked', readiness };
 
-  const launchReview = buildBidLaunchReview(
-    {
-      mode: 'live',
-      versionId: input.body.versionId,
-      versionSha256: input.body.versionSha256,
-      contextSha256: prepared.pins.contextSha256,
-    },
-    [...(prepared.launchReview?.advisories ?? []), ...(readiness.launchAdvisories ?? [])],
-  );
+  const launchContext = bidLaunchContextForSnapshot(prepared.snapshot, 'live');
+  if (launchContext === null)
+    return { ok: false as const, error: 'session_launch_review_integrity_invalid' };
+  const launchReview = buildBidLaunchReview(launchContext, [
+    ...(prepared.launchReview?.advisories ?? []),
+    ...(readiness.launchAdvisories ?? []),
+  ]);
   const acknowledgement = checkBidLaunchAcknowledgement(
     launchReview,
     input.body.launchAcknowledgement,
@@ -301,10 +336,7 @@ export async function createBidDefinitionLive(
       receipt: receiptInput,
       response,
       operatorLaunchReview: {
-        mode: 'live',
-        versionId: prepared.pins.bidVersionId,
-        versionSha256: prepared.pins.bidVersionSha256,
-        contextSha256: prepared.pins.contextSha256,
+        ...launchContext,
         review: launchReview,
         acknowledged: acknowledgement.acknowledged,
       },

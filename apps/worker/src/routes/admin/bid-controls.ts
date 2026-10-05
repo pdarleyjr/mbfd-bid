@@ -517,6 +517,7 @@ router.get('/:id/specialty-live', async (c) => {
           bidOrdinalEvidence: candidate.bidOrdinalEvidence,
           credentialNames: candidate.credentialNames,
           scoringEvidence: candidate.scoringEvidence,
+          scoreReferenceEvidence: candidate.scoreReferenceEvidence,
           specialtyQualifications: candidate.specialtyQualifications,
         })),
       });

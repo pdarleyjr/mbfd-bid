@@ -1,11 +1,15 @@
 import {
   compareOrderedPreferences,
+  compareScoreReferencePriorities,
   configuredChannel,
   evaluateOrderedPreference,
+  referencePriority,
+  scoreReferenceForPositions,
 } from '@mbfd/eligibility';
 import {
   type FrozenAnnualSpecialtyPolicy,
   type FrozenBidOrdinalEvidence,
+  type FrozenScoreReferenceEvidence,
   bidOrdinalValue,
 } from '@mbfd/shared';
 
@@ -15,6 +19,7 @@ export interface FrozenSpecialtyCandidateFact {
   readonly rankSeniority: number | null;
   readonly bidOrdinalEvidence?: FrozenBidOrdinalEvidence | undefined;
   readonly credentialNames: readonly string[];
+  readonly scoreReferenceEvidence?: readonly FrozenScoreReferenceEvidence[] | undefined;
   readonly scoringEvidence?:
     | { evaluationOn: string; completedCredentialNames: string[] }
     | undefined;
@@ -91,8 +96,17 @@ export function rankFrozenSpecialtyCandidates(input: {
       )
     )
       return [];
-    const points =
-      input.policy.scoring && input.policy.rankingChannel
+    const reference = scoreReferenceForPositions(
+      member.scoreReferenceEvidence,
+      input.policy.opportunityPositionIds,
+    );
+    const points = reference
+      ? input.policy.rankingChannel === 'so'
+        ? reference.soPoints
+        : input.policy.rankingChannel === 'mo'
+          ? reference.moPoints
+          : reference.points
+      : input.policy.scoring && input.policy.rankingChannel
         ? configuredChannel(
             {
               credentials: [...credentials].map((name) => ({ name })),
@@ -113,6 +127,7 @@ export function rankFrozenSpecialtyCandidates(input: {
       {
         member,
         points,
+        scoreReferencePriority: reference ? referencePriority(reference) : undefined,
         orderedPreference:
           orderedPreference === undefined
             ? undefined
@@ -133,6 +148,11 @@ export function rankFrozenSpecialtyCandidates(input: {
   }
   return candidates
     .sort((left, right) => {
+      const sourcePriority = compareScoreReferencePriorities(
+        left.scoreReferencePriority,
+        right.scoreReferencePriority,
+      );
+      if (sourcePriority !== null) return sourcePriority;
       const ordered = compareOrderedPreferences(left.orderedPreference, right.orderedPreference);
       if (ordered !== 0) return ordered;
       for (const rule of input.policy.tieBreakChain) {

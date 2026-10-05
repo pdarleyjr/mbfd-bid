@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type {
   AirTechReference,
   MemberBidFormResponse,
+  MemberRankReference,
 } from '../../../../../worker/src/lib/bid-form-source';
 
 type FormState = { key: string; data: MemberBidFormResponse | null; error: string | null };
@@ -214,13 +215,19 @@ export function BidMemberForm({
           </div>
         </details>
       ) : null}
+      <PublishedRankReferences references={data.rankReferences} />
     </div>
   );
 }
 
 export function SpecialtyReference({
   reference,
-}: { reference: AirTechReference | null | undefined }) {
+  rankReferences,
+}: {
+  reference: AirTechReference | null | undefined;
+  rankReferences?: readonly MemberRankReference[] | undefined;
+}) {
+  if (rankReferences?.length) return <PublishedRankReferences references={rankReferences} />;
   if (!reference) return null;
   return (
     <details className="border-t border-border pt-3 text-sm">
@@ -257,5 +264,63 @@ export function SpecialtyReference({
         Source SHA-256: {reference.sourceSha256}
       </p>
     </details>
+  );
+}
+
+/** Source cells stay literal, including absent dates/orders or printed totals
+ * that differ from their components. Execution remains the saved Bid policy. */
+export function PublishedRankReferences({
+  references,
+}: { references: readonly MemberRankReference[] | undefined }) {
+  if (!references?.length) return null;
+  return (
+    <section aria-label="Published rank lists" className="border-t border-border pt-3 text-sm">
+      <h3 className="mb-1 font-semibold">Published rank lists</h3>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Source reference. Bid eligibility and priority use this bid’s saved evidence.
+      </p>
+      <div className="divide-y divide-border">
+        {references.map((reference) => (
+          <details key={reference.listId}>
+            <summary className="min-h-11 cursor-pointer content-center font-semibold">
+              {reference.title}
+              {reference.row.bidOrder === null
+                ? ''
+                : ` · Published order ${reference.row.bidOrder}`}
+            </summary>
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 pb-3">
+              {reference.columns.map((column) => (
+                <div key={column} className="contents">
+                  <dt className="break-words">{reference.columnLabels[column]}</dt>
+                  <dd className="max-w-40 break-words text-right tabular-nums">
+                    {reference.row.values[column] ?? 'Not recorded'}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <details className="pb-3 text-xs text-muted-foreground">
+              <summary className="min-h-11 cursor-pointer content-center font-semibold">
+                List source
+              </summary>
+              <div className="space-y-1 break-words">
+                <p>{reference.source.name}</p>
+                {reference.source.generatedAt.map((date) => (
+                  <p key={date}>Generated {date}</p>
+                ))}
+                <p>
+                  Listed as {reference.row.sourceRank} {reference.row.sourceMemberName}
+                </p>
+                <p>
+                  {reference.row.provenance
+                    .map((location) => `Page ${location.page}, line ${location.textLine}`)
+                    .join(' · ')}
+                </p>
+                <p className="break-all">Source SHA-256: {reference.source.sha256}</p>
+              </div>
+            </details>
+          </details>
+        ))}
+      </div>
+    </section>
   );
 }
