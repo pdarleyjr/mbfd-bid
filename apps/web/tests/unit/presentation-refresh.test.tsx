@@ -64,12 +64,13 @@ describe('Department presentation refresh', () => {
           station: 'Station 3',
           unit: 'Engine 3',
           position_name: 'Combat Lieutenant',
+          a_day_group: 'G2',
         },
       };
       await act(async () => root.render(<PresentationView initial={view} key="named-seat" />));
       const header = container.querySelector('[data-testid="presentation-current-bidder"]');
       expect(header?.textContent).toContain(
-        'Current seat: A Shift · Station 3 · Engine 3 · Combat Lieutenant',
+        'Current seat: A Shift · Station 3 · Engine 3 · Combat Lieutenant · A-Day Group 2',
       );
       expect(header?.textContent).not.toContain('01M1CKSSQVK44M8DHQMN4XERVS');
       expect(fetchMock).not.toHaveBeenCalled();

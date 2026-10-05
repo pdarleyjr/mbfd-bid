@@ -14,10 +14,7 @@ import { getDb } from '../db/index.js';
 import { bidSessions as bidSessionsTable, bids as bidsTable } from '../db/schema.js';
 import { hydrateADayState } from '../durable/bid-session-aday-handlers.js';
 import type { BidSessionState, PersistedADayState } from '../durable/bid-session-state.js';
-import {
-  loadAudienceCurrentAssignment,
-  remainingAudienceQueue,
-} from '../lib/audience-bid-context.js';
+import { remainingAudienceQueue } from '../lib/audience-bid-context.js';
 import { safelyProjectAuthoritativeBidAdvisory } from '../lib/bid-advisory-projection.js';
 import {
   loadPriorBidHistoricalContext,
@@ -31,6 +28,10 @@ import {
 } from '../lib/bid-policy.js';
 import { mergeFills, resolveCurrentBidderId, resolvePhase } from '../lib/board-merge.js';
 import { requiresCanonicalAnnualExecution } from '../lib/canonical-annual-execution.js';
+import {
+  type CurrentStaffingContext,
+  loadCurrentStaffingContexts,
+} from '../lib/current-staffing-source.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
@@ -258,10 +259,19 @@ bid.get('/presentation', async (c) => {
     seenQueueMembers.add(entry.memberId);
     return true;
   });
-  const [currentAssignment, historical] = await Promise.all([
-    loadAudienceCurrentAssignment(c.env.DB, currentBidderId, operationalDate()),
+  const currentIdentity = currentBidderId === null ? undefined : identities.get(currentBidderId);
+  const [currentStaffing, historical] = await Promise.all([
+    loadCurrentStaffingContexts(
+      c.env.DB,
+      c.env.R2_EXPORTS,
+      currentIdentity
+        ? [{ memberId: currentIdentity.memberId, employeeId: currentIdentity.employeeId }]
+        : [],
+      operationalDate(),
+    ),
     loadPriorBidHistoricalContext(c.env.R2_EXPORTS, session.bidYear),
   ]);
+  const currentAssignment = currentBidderId === null ? null : currentStaffing.get(currentBidderId);
   const previous = projectMemberHistoricalContext(
     historical,
     currentBidderId === null ? undefined : identities.get(currentBidderId)?.employeeId,
@@ -287,7 +297,18 @@ bid.get('/presentation', async (c) => {
             ...currentMember,
             pending_a_day:
               queue.find((entry) => entry.memberId === currentBidderId)?.pendingADay ?? false,
-            current_assignment: currentAssignment,
+            current_assignment:
+              currentAssignment?.evidenceStatus === 'RECORDED'
+                ? {
+                    position_id: currentAssignment.positionId,
+                    position_name: currentAssignment.positionLabel,
+                    shift: currentAssignment.shift,
+                    station: currentAssignment.station,
+                    unit: currentAssignment.unit,
+                    a_day_group: currentAssignment.aDayGroup,
+                    source_name: currentAssignment.sourceName,
+                  }
+                : null,
             previous_assignment:
               previous.evidenceStatus === 'RECORDED'
                 ? {
@@ -699,6 +720,7 @@ bid.get('/board', async (c) => {
       employeeId: string;
       priorPositionId: string | null;
       historicalContext?: MemberHistoricalContext;
+      currentAssignment?: CurrentStaffingContext;
     }
   > = {};
   // When the DO has no materialized order, render the order derived from the
@@ -772,15 +794,27 @@ bid.get('/board', async (c) => {
   if (currentBidderId !== null) lookupIds.add(currentBidderId);
   for (const entry of onDeckEntries) lookupIds.add(entry.memberId);
 
-  const historicalProjection =
+  const [historicalProjection, currentStaffing] = await Promise.all([
     claims.role === 'admin' && bidYear !== null
-      ? await loadPriorBidHistoricalContext(c.env.R2_EXPORTS, bidYear)
-      : null;
+      ? loadPriorBidHistoricalContext(c.env.R2_EXPORTS, bidYear)
+      : Promise.resolve(null),
+    claims.role === 'admin'
+      ? loadCurrentStaffingContexts(
+          c.env.DB,
+          c.env.R2_EXPORTS,
+          [...operatorIdentityByMember.values()].filter((identity) =>
+            lookupIds.has(identity.memberId),
+          ),
+          operationalDate(),
+        )
+      : Promise.resolve(new Map<number, CurrentStaffingContext>()),
+  ]);
 
   for (const memberId of lookupIds) {
     const member = snapshotMembersById.get(memberId);
     if (member === undefined) continue;
     const identity = operatorIdentityByMember.get(memberId);
+    const currentAssignment = currentStaffing.get(memberId);
     members[String(memberId)] = {
       id: memberId,
       firstName: identity?.firstName ?? 'Member',
@@ -788,6 +822,7 @@ bid.get('/board', async (c) => {
       rank: identity?.rank ?? member.rank,
       employeeId: identity?.employeeId ?? `#${memberId}`,
       priorPositionId: null,
+      ...(currentAssignment === undefined ? {} : { currentAssignment }),
       ...(historicalProjection === null
         ? {}
         : {

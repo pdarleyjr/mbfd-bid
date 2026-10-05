@@ -70,6 +70,9 @@ function assignmentLabel(
     assignment.station,
     assignment.unit,
     assignment.position_name,
+    assignment.a_day_group
+      ? `A-Day ${String(assignment.a_day_group).replace(/^(?:GR|G)(\d+)$/, 'Group $1')}`
+      : null,
   ]
     .filter(Boolean)
     .join(' · ');

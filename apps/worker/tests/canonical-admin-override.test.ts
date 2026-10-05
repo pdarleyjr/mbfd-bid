@@ -174,6 +174,7 @@ describe.each([
     officersPerGroup: number | null = null,
     combatGroups: ('G1' | 'G2' | 'G3' | 'G4')[] = ['G1', 'G2', 'G3', 'G4'],
     additionalParticipants: readonly number[] = [],
+    firefighterSeatRank: 'FF' | 'LT' = 'FF',
   ) {
     policy = structuredClone(basePolicy);
     if (additionalParticipants.length > 0)
@@ -249,7 +250,7 @@ describe.each([
           shift: id.startsWith('D') ? 'D' : 'A',
           station: 'Synthetic station',
           unit: 'Synthetic unit',
-          rankRequired: id === 'A102' ? 'FF' : 'CPT',
+          rankRequired: id === 'A102' ? firefighterSeatRank : 'CPT',
           positionName: `Synthetic ${id}`,
         })),
         rules: ['D101', 'D102', 'A101', 'A102', 'A103'].map((positionId) => ({
@@ -257,7 +258,7 @@ describe.each([
           templateVersion: 'synthetic-override',
           ruleBookVersion: 'synthetic-override',
           requiredCriteriaJson: JSON.stringify({
-            rank: [positionId === 'A102' ? 'FF' : 'CPT'],
+            rank: [positionId === 'A102' ? firefighterSeatRank : 'CPT'],
             credentials: positionId === 'A103' ? ['Synthetic specialty'] : [],
             custom: ['non_probationary'],
           }),
@@ -742,49 +743,65 @@ describe.each([
     ).toEqual({ count: 4 });
   });
 
-  it('defers a simultaneous A-Day under audited direction and retains its prompt across ordinary commands and reload', async () => {
-    seed(true);
-    const early = await confirmed(
-      initialState(),
-      command('live.record_selection', {
-        memberId: 44,
+  it.each(['FF', 'LT'] as const)(
+    'awards an FF a %s seat with an empty note and retains the deferred A-Day prompt across commands and reload',
+    async (seatRank) => {
+      seed(true, 10, null, ['G1', 'G2', 'G3', 'G4'], [], seatRank);
+      const early = await confirmed(
+        initialState(),
+        command('live.record_selection', {
+          memberId: 44,
+          positionId: 'A102',
+          reason: '',
+          adminOverride: override,
+        }),
+      );
+      expect(early.state.fills.A102?.aDay).toBeUndefined();
+      if (seatRank === 'LT') {
+        if (early.command.type !== 'live.record_selection')
+          throw new Error('Expected selection command');
+        expect(early.command.adminOverride?.warningCodes).toContain('QUALIFICATION_DEVIATION');
+        const saved = sqlite
+          .prepare('SELECT snapshot_json FROM bid_session_policy_snapshots WHERE bid_session_id=?')
+          .get(sessionId) as { snapshot_json: string };
+        expect(
+          JSON.parse(saved.snapshot_json).members.find(
+            (row: { memberId: number }) => row.memberId === 44,
+          ).rank,
+        ).toBe('FF');
+      }
+      expect(early.state.fills.A102?.aDayDeferral).toMatchObject({
         positionId: 'A102',
+        commandId: early.command.commandId,
         reason: '',
-        adminOverride: override,
-      }),
-    );
-    expect(early.state.fills.A102?.aDay).toBeUndefined();
-    expect(early.state.fills.A102?.aDayDeferral).toMatchObject({
-      positionId: 'A102',
-      commandId: early.command.commandId,
-      reason: '',
-    });
-    const ordinary = await execute(
-      early.state,
-      command('live.record_selection', { memberId: 42, positionId: 'D101', aDay: 'MON' }, 1),
-    );
-    expect(ordinary.result.kind).toBe('accepted');
-    const reloaded = await loadCanonicalBidSessionState(db, sessionId);
-    if (!reloaded) throw new Error('deferred canonical state required');
-    expect(reloaded.fills.A102?.aDayDeferral).toEqual(early.state.fills.A102?.aDayDeferral);
-    const finalCaptain = await execute(
-      reloaded,
-      command('live.record_selection', { memberId: 43, positionId: 'D102', aDay: 'TUE' }, 2),
-    );
-    expect(finalCaptain.canonicalState).toMatchObject({
-      currentPhase: 'a_day_bid',
-      currentBidderId: 44,
-    });
-    if (!finalCaptain.canonicalState) throw new Error('deferred prompt required');
-    const picked = await execute(
-      finalCaptain.canonicalState,
-      command('live.record_a_day', { memberId: 44, aDay: 'G2' }, 3),
-    );
-    expect(picked.result.kind).toBe('accepted');
-    expect(picked.canonicalState?.aDay?.picks.find((pick) => pick.memberId === 44)?.aDay).toBe(
-      'G2',
-    );
-  });
+      });
+      const ordinary = await execute(
+        early.state,
+        command('live.record_selection', { memberId: 42, positionId: 'D101', aDay: 'MON' }, 1),
+      );
+      expect(ordinary.result.kind).toBe('accepted');
+      const reloaded = await loadCanonicalBidSessionState(db, sessionId);
+      if (!reloaded) throw new Error('deferred canonical state required');
+      expect(reloaded.fills.A102?.aDayDeferral).toEqual(early.state.fills.A102?.aDayDeferral);
+      const finalCaptain = await execute(
+        reloaded,
+        command('live.record_selection', { memberId: 43, positionId: 'D102', aDay: 'TUE' }, 2),
+      );
+      expect(finalCaptain.canonicalState).toMatchObject({
+        currentPhase: 'a_day_bid',
+        currentBidderId: 44,
+      });
+      if (!finalCaptain.canonicalState) throw new Error('deferred prompt required');
+      const picked = await execute(
+        finalCaptain.canonicalState,
+        command('live.record_a_day', { memberId: 44, aDay: 'G2' }, 3),
+      );
+      expect(picked.result.kind).toBe('accepted');
+      expect(picked.canonicalState?.aDay?.picks.find((pick) => pick.memberId === 44)?.aDay).toBe(
+        'G2',
+      );
+    },
+  );
 
   it('changes an early or existing A-Day under review without changing the award or taking another member turn', async () => {
     seed(true, 1);

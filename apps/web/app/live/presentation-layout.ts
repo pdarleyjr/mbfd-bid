@@ -12,6 +12,8 @@ export type PresentationMember = {
     station: string | null;
     unit: string | null;
     position_name: string | null;
+    a_day_group?: string | number | null;
+    source_name?: string | null;
   } | null;
   previous_assignment?: {
     position_id: string | null;

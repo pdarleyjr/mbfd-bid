@@ -96,20 +96,24 @@ function fileResponse(format: 'pdf' | 'xlsx', name = `mbfd-mock-bid-2026-all-seq
 describe('current session shift downloads', () => {
   it.each(
     ['A', 'B', 'C', 'D', 'ALL'].flatMap((shift) =>
-      ['pdf', 'xlsx'].map((format) => ({ shift, format })),
+      ['pdf', 'xlsx'].flatMap((format) =>
+        ['shift', 'bid'].map((view) => ({ shift, format, view })),
+      ),
     ),
   )(
-    'downloads $shift as $format through the authenticated proxy without changing the session',
-    async ({ shift, format }) => {
+    'downloads $view view $shift as $format through the authenticated proxy without changing the session',
+    async ({ shift, format, view }) => {
       const fileFormat = format as 'pdf' | 'xlsx';
       const fetchMock = vi.fn(async () => fileResponse(fileFormat));
       vi.stubGlobal('fetch', fetchMock);
       await mount(<ShiftExports sessionId="session / test" />);
+      expect(selectField('Export view').value).toBe('shift');
+      await select('Export view', view);
       await select('Export shifts', shift);
       await select('Export format', format);
       await click(`Download ${format === 'pdf' ? 'PDF' : 'Excel'}`);
       expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
-        `/api/admin/exports/session%20%2F%20test/shifts?shift=${shift}&format=${format}`,
+        `/api/admin/exports/session%20%2F%20test/shifts?shift=${shift}&format=${format}${view === 'shift' ? '&view=shift' : ''}`,
         { credentials: 'same-origin', cache: 'no-store' },
       );
       expect(files).toEqual([
@@ -140,7 +144,7 @@ describe('current session shift downloads', () => {
     await select('Export format', 'xlsx');
     await click('Download Excel');
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/admin/exports/retained-mock/shifts?shift=B&format=xlsx',
+      '/api/admin/exports/retained-mock/shifts?shift=B&format=xlsx&view=shift',
       { credentials: 'same-origin', cache: 'no-store' },
     );
     expect(files).toHaveLength(1);
@@ -188,6 +192,7 @@ describe('current session shift downloads', () => {
     await mount(<ShiftExports sessionId="pending-session" />);
     await click('Download PDF');
     expect(selectField('Export shifts').disabled).toBe(true);
+    expect(selectField('Export view').disabled).toBe(true);
     expect(selectField('Export format').disabled).toBe(true);
     expect(host.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true);
     await click('Preparing download…');

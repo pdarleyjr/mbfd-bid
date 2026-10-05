@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 
 export type ShiftExportScope = 'A' | 'B' | 'C' | 'D' | 'ALL';
 type ShiftExportFormat = 'pdf' | 'xlsx';
+export type ShiftExportView = 'shift' | 'bid';
 
 export function shiftExportScope(value: unknown): ShiftExportScope {
   return value === 'A' || value === 'B' || value === 'C' || value === 'D' ? value : 'ALL';
@@ -17,10 +18,12 @@ export function shiftExportHref(
   sessionId: string,
   scope: ShiftExportScope,
   format: ShiftExportFormat,
+  view: ShiftExportView = 'bid',
 ): string {
   return `/api/admin/exports/${encodeURIComponent(sessionId)}/shifts?${new URLSearchParams({
     shift: scope,
     format,
+    ...(view === 'shift' ? { view } : {}),
   })}`;
 }
 
@@ -59,6 +62,7 @@ export function ShiftExports({
 }) {
   const [scope, setScope] = useState<ShiftExportScope>(initialScope);
   const [format, setFormat] = useState<ShiftExportFormat>('pdf');
+  const [view, setView] = useState<ShiftExportView>('shift');
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null);
@@ -69,7 +73,7 @@ export function ShiftExports({
     setBusy(true);
     setNotice(null);
     try {
-      const response = await fetch(shiftExportHref(sessionId, scope, format), {
+      const response = await fetch(shiftExportHref(sessionId, scope, format, view), {
         credentials: 'same-origin',
         cache: 'no-store',
       });
@@ -93,7 +97,7 @@ export function ShiftExports({
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNotice({
         error: false,
-        text: `${scope === 'ALL' ? 'All shifts' : scope === 'D' ? 'Days' : `${scope} Shift`} ${format === 'pdf' ? 'PDF' : 'Excel'} download started.`,
+        text: `${view === 'shift' ? 'Shift View' : 'Bid View'}: ${scope === 'ALL' ? 'All shifts' : scope === 'D' ? 'Days' : `${scope} Shift`} ${format === 'pdf' ? 'PDF' : 'Excel'} download started.`,
       });
     } catch (caught) {
       setNotice({
@@ -114,9 +118,27 @@ export function ShiftExports({
   return (
     <section aria-label="Shift exports" className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Current selections, A-Days and open seats, grouped by station.
+        {view === 'shift'
+          ? 'Station boards with selected members, A-Days and open seats.'
+          : 'Detailed selections, A-Days and open seats, grouped by station.'}
       </p>
       <div className="flex flex-wrap items-end gap-3">
+        <label className="flex min-w-40 flex-col gap-1 text-sm font-semibold">
+          View
+          <select
+            aria-label="Export view"
+            value={view}
+            disabled={busy}
+            onChange={(event) => {
+              setView(event.target.value === 'bid' ? 'bid' : 'shift');
+              setNotice(null);
+            }}
+            className="min-h-11 rounded-md border border-input bg-background px-3 font-normal"
+          >
+            <option value="shift">Shift View</option>
+            <option value="bid">Bid View</option>
+          </select>
+        </label>
         <label className="flex min-w-40 flex-col gap-1 text-sm font-semibold">
           Shifts
           <select

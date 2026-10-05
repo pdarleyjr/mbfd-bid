@@ -7,6 +7,7 @@ import { getDb } from '../db/index.js';
 import { bidSessions, bids } from '../db/schema.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { loadFrozenSessionBidPolicy } from '../lib/bid-policy.js';
+import type { CurrentStaffingReceipt } from '../lib/current-staffing-source.js';
 
 export const EXPORT_SHIFTS = ['A', 'B', 'C', 'D'] as const;
 export type ExportShift = (typeof EXPORT_SHIFTS)[number];
@@ -18,6 +19,11 @@ export interface ShiftRosterRow {
   unit: string;
   position: string;
   rank: string;
+  /** Saved topology facts, never inferred from a member's current directory seat. */
+  division?: string;
+  isFloating?: boolean;
+  isExcludedFromCount?: boolean;
+  administrativeAssignment?: boolean;
   member: string | null;
   memberRank: string | null;
   aDay: string | null;
@@ -45,6 +51,7 @@ export interface ShiftRoster {
     stations: Array<{ station: string; rows: ShiftRosterRow[] }>;
   }>;
   unplacedTemporaryDuties: string[];
+  currentStaffing?: { sourceName: string; sourceSha256: string; snapshotAt: string };
 }
 
 export class ShiftRosterError extends Error {
@@ -107,6 +114,8 @@ export function buildShiftRoster(input: {
   }[];
   scope: ExportScope;
   generatedAt: string;
+  /** Optional verified directory context, used only for Shift View Chief 300 seats. */
+  currentStaffing?: CurrentStaffingReceipt | null;
 }): ShiftRoster {
   const { snapshot, state } = input;
   const positions = new Map(snapshot.ruleBookMaterial.positions.map((p) => [p.id, p]));
@@ -120,6 +129,54 @@ export function buildShiftRoster(input: {
       ? `${identity.firstName} ${identity.lastName}`
       : 'Name unavailable in saved bid';
   };
+  const chiefUnit = (value: string | null) =>
+    ['300', 'CHIEF300', 'DIVISIONCHIEF300'].includes(
+      (value ?? '').replace(/[^a-z0-9]/gi, '').toUpperCase(),
+    );
+  const chiefRole = (value: string | null) =>
+    (value ?? '').replace(/[^a-z0-9]/gi, '').toUpperCase() === 'DIVISIONCHIEF';
+  const stationKey = (value: string | null) =>
+    (value ?? '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+  const directory =
+    input.currentStaffing &&
+    new Date(input.currentStaffing.archive.snapshotAt).getTime() <=
+      new Date(input.generatedAt).getTime()
+      ? input.currentStaffing.archive
+      : null;
+  const chiefs = new Map<string, { memberId: number; aDay: string | null }>();
+  if (directory) {
+    for (const shift of EXPORT_SHIFTS) {
+      const seats = snapshot.ruleBookMaterial.positions.filter(
+        (position) =>
+          position.shift === shift &&
+          position.bidParticipation === 'ADMIN_ASSIGNED_NON_BIDDABLE' &&
+          position.rankRequired === 'DC' &&
+          chiefUnit(position.unit) &&
+          chiefRole(position.positionName),
+      );
+      const staff = directory.rows.filter(
+        (row) => row.shift === shift && chiefUnit(row.unit) && chiefRole(row.positionLabel),
+      );
+      if (seats.length !== 1 || staff.length !== 1) continue;
+      const seat = seats[0];
+      const person = staff[0];
+      if (!seat || !person) continue;
+      // The CSV column combines stations and administrative divisions. Chief
+      // 300 rows explicitly say "Division Chief", not a numbered fire station.
+      const sourceStation = stationKey(person.station);
+      if (
+        sourceStation &&
+        sourceStation !== 'DIVISIONCHIEF' &&
+        stationKey(seat.station) !== sourceStation
+      )
+        continue;
+      const identity = (snapshot.operatorIdentityProjection ?? []).filter(
+        (member) => member.employeeId === person.employeeId,
+      );
+      if (identity.length !== 1 || !identity[0] || !members.has(identity[0].memberId)) continue;
+      chiefs.set(seat.id, { memberId: identity[0].memberId, aDay: person.aDayGroup });
+    }
+  }
   const awards = new Map<
     string,
     {
@@ -185,6 +242,15 @@ export function buildShiftRoster(input: {
     ruleBookVersion: snapshot.ruleBookVersion,
     configurationRevision: snapshot.configurationRevision,
     scope: input.scope,
+    ...(chiefs.size && directory
+      ? {
+          currentStaffing: {
+            sourceName: directory.source.name,
+            sourceSha256: directory.source.sha256,
+            snapshotAt: directory.snapshotAt,
+          },
+        }
+      : {}),
     shifts: selectedShifts.map((shift) => {
       const stationMap = new Map<string, ShiftRosterRow[]>();
       let selected = 0;
@@ -192,7 +258,14 @@ export function buildShiftRoster(input: {
       const shiftPositions = snapshot.ruleBookMaterial.positions.filter((p) => p.shift === shift);
       for (const position of shiftPositions) {
         const award = awards.get(position.id);
-        const member = award ? members.get(award.memberId) : null;
+        // A canonical temporary duty takes precedence over the current directory
+        // occupant for that nonbiddable seat. Never overlay a biddable award.
+        const chief = !award && !duties.get(position.id)?.length ? chiefs.get(position.id) : null;
+        const member = award
+          ? members.get(award.memberId)
+          : chief
+            ? members.get(chief.memberId)
+            : null;
         const status = award
           ? 'Selected'
           : position.bidParticipation === 'BIDDABLE'
@@ -205,7 +278,10 @@ export function buildShiftRoster(input: {
           unit: position.unit,
           position: position.positionName,
           rank: position.rankRequired,
-          member: award ? memberLabel(award.memberId) : null,
+          ...(position.division !== undefined ? { division: position.division } : {}),
+          ...(position.isFloating !== undefined ? { isFloating: position.isFloating } : {}),
+          isExcludedFromCount: position.isExcludedFromCount,
+          member: award ? memberLabel(award.memberId) : chief ? memberLabel(chief.memberId) : null,
           memberRank: member?.rank ?? null,
           aDay: award
             ? award.aDay === null
@@ -213,13 +289,17 @@ export function buildShiftRoster(input: {
                 ? 'Deferred'
                 : 'Not selected'
               : aDayLabel(award.aDay)
-            : null,
+            : chief?.aDay
+              ? aDayLabel(chief.aDay)
+              : null,
           status,
           markers: [
+            ...(chief ? ['Admin assigned'] : []),
             ...(award?.forced ? ['Forced'] : []),
             ...(award?.aDayOverride ? ['A-Day override'] : []),
           ],
           temporaryDuties: duties.get(position.id) ?? [],
+          ...(chief ? { administrativeAssignment: true } : {}),
         };
         stationMap.set(position.station, [...(stationMap.get(position.station) ?? []), row]);
       }
@@ -248,6 +328,7 @@ export async function captureShiftRoster(
   database: D1Database,
   sessionId: string,
   scope: ExportScope,
+  currentStaffing?: CurrentStaffingReceipt | null,
 ): Promise<ShiftRoster> {
   const db = getDb(database);
   const session = await db.select().from(bidSessions).where(eq(bidSessions.id, sessionId)).get();
@@ -284,5 +365,6 @@ export async function captureShiftRoster(
     legacyAwards,
     scope,
     generatedAt: new Date().toISOString(),
+    ...(currentStaffing !== undefined ? { currentStaffing } : {}),
   });
 }

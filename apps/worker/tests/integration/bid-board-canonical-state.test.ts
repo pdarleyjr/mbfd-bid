@@ -1,7 +1,13 @@
+import { deepStrictEqual } from 'node:assert/strict';
 import type { HistoricalBid, HistoricalBidReceipt } from '@mbfd/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '../../src/index.js';
+import {
+  CURRENT_STAFFING_KEY,
+  type CurrentStaffingArchive,
+  currentStaffingArchiveHash,
+} from '../../src/lib/current-staffing-source.js';
 import { signJwt } from '../../src/lib/jwt.js';
 import { canonicalOrderUsesFrozenMembership } from '../../src/routes/bid.js';
 import type { WorkerEnv } from '../../src/types/env.js';
@@ -317,6 +323,70 @@ describe('GET /api/board canonical mock state', () => {
     await teardownTestD1(h);
   });
 
+  it('links current directory staffing through frozen employee identity separately from last-year history and awards', async () => {
+    const archive: CurrentStaffingArchive = {
+      v: 1,
+      source: { name: 'directory.csv', sha256: 'c'.repeat(64) },
+      snapshotAt: '2000-01-01T00:00:00.000Z',
+      rows: [
+        {
+          employeeId: '770077',
+          sourceRank: 'Firefighter',
+          shift: 'B',
+          station: 'Station 6',
+          unit: 'Fire Boat 6',
+          positionLabel: 'Firefighter ENG',
+          aDayGroup: 'G2',
+          sourceRow: 12,
+        },
+      ],
+    };
+    const directory = {
+      archive,
+      sha256: await currentStaffingArchiveHash(archive),
+      publishedAt: '2000-01-01T00:00:00.000Z',
+      publishedBy: '78',
+    };
+    const historical = await historicalReceipt();
+    const get = vi.fn(async (key: string) => ({
+      json: async () => (key === CURRENT_STAFFING_KEY ? directory : historical),
+    }));
+    await h.db.run("UPDATE members SET employee_id='999999' WHERE id=77;");
+    const before = h.sqlite.serialize();
+    const response = await app.fetch(
+      new Request(`http://x/api/board?bidSessionId=${SESSION_ID}`, {
+        headers: { Authorization: `Bearer ${await jwt('770078')}` },
+      }),
+      {
+        ...h.env,
+        JWT_SIGNING_KEY: KEY,
+        BID_SESSION: stubBidSessionNamespace(),
+        R2_EXPORTS: { get } as unknown as WorkerEnv['R2_EXPORTS'],
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      members: {
+        '77': {
+          employeeId: '770077',
+          currentAssignment: {
+            evidenceStatus: 'RECORDED',
+            positionId: null,
+            shift: 'B',
+            station: 'Station 6',
+            unit: 'Fire Boat 6',
+            positionLabel: 'Firefighter ENG',
+            aDayGroup: 'G2',
+            source: 'DIRECTORY_CSV',
+          },
+          historicalContext: { year: 2025, historicalPositionId: 'A101', aDayGroup: 'GR4' },
+        },
+      },
+      fills: {},
+    });
+    deepStrictEqual(h.sqlite.serialize(), before);
+  });
+
   it('adds verified source-bound history without reusing live position metadata or changing state', async () => {
     const receipt = await historicalReceipt();
     const bucket = historicalBucket(receipt);
@@ -345,7 +415,9 @@ describe('GET /api/board canonical mock state', () => {
       },
     );
     expect(res.status).toBe(200);
-    expect(bucket.get).toHaveBeenCalledExactlyOnceWith('historical-bids/v1/2025.json');
+    expect(bucket.get).toHaveBeenCalledWith('historical-bids/v1/2025.json');
+    expect(bucket.get).toHaveBeenCalledWith('current-staffing/v1/current.json');
+    expect(bucket.get).toHaveBeenCalledTimes(2);
     expect(await res.json()).toMatchObject({
       lastSeq: 8,
       currentPhase: 'paused',
@@ -404,7 +476,9 @@ describe('GET /api/board canonical mock state', () => {
       },
     );
     expect(res.status).toBe(200);
-    expect(bucket.get).toHaveBeenCalledExactlyOnceWith('historical-bids/v1/2026.json');
+    expect(bucket.get).toHaveBeenCalledWith('historical-bids/v1/2026.json');
+    expect(bucket.get).toHaveBeenCalledWith('current-staffing/v1/current.json');
+    expect(bucket.get).toHaveBeenCalledTimes(2);
     expect(await res.json()).toMatchObject({
       members: { '77': { historicalContext: { year: 2026, evidenceStatus: 'RECORDED' } } },
     });

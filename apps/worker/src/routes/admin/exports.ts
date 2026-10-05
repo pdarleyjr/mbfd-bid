@@ -34,10 +34,13 @@ import { generateRosterPdf } from '../../exports/roster-pdf.js';
 import { generateShiftPdf } from '../../exports/shift-roster-pdf.js';
 import { generateShiftWorkbook } from '../../exports/shift-roster-xlsx.js';
 import { ShiftRosterError, captureShiftRoster } from '../../exports/shift-roster.js';
+import { generateShiftViewPdf } from '../../exports/shift-view-pdf.js';
+import { generateShiftViewWorkbook } from '../../exports/shift-view-xlsx.js';
 import { createSignedR2Url } from '../../exports/signed-url.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { loadFrozenSessionBidPolicy } from '../../lib/bid-policy.js';
 import { createCsvStream } from '../../lib/csv-stream.js';
+import { loadCurrentStaffingReceipt } from '../../lib/current-staffing-source.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -542,8 +545,13 @@ router.get('/:session_id/shifts', async (c) => {
     .object({
       format: z.enum(['pdf', 'xlsx']),
       shift: z.enum(['A', 'B', 'C', 'D', 'ALL']),
+      view: z.enum(['bid', 'shift']),
     })
-    .safeParse({ format: c.req.query('format'), shift: c.req.query('shift') ?? 'ALL' });
+    .safeParse({
+      format: c.req.query('format'),
+      shift: c.req.query('shift') ?? 'ALL',
+      view: c.req.query('view') ?? 'bid',
+    });
   if (!selection.success) return c.json({ error: 'invalid_export_selection' }, 400);
   if (
     selection.data.format === 'pdf' &&
@@ -556,12 +564,20 @@ router.get('/:session_id/shifts', async (c) => {
       c.env.DB,
       c.req.param('session_id'),
       selection.data.shift,
+      selection.data.view === 'shift' ? await loadCurrentStaffingReceipt(c.env.R2_EXPORTS) : null,
     );
     const body =
       selection.data.format === 'xlsx'
-        ? await (await generateShiftWorkbook(roster)).arrayBuffer()
-        : await generateShiftPdf(roster, c.env.BROWSER);
-    const fileName = `mbfd-${roster.isMock ? 'mock' : 'real'}-bid-${roster.year}-${roster.scope}-seq-${roster.sequence}.${selection.data.format}`;
+        ? await (
+            await (selection.data.view === 'shift'
+              ? generateShiftViewWorkbook(roster)
+              : generateShiftWorkbook(roster))
+          ).arrayBuffer()
+        : await (selection.data.view === 'shift'
+            ? generateShiftViewPdf(roster, c.env.BROWSER)
+            : generateShiftPdf(roster, c.env.BROWSER));
+    const viewName = selection.data.view === 'shift' ? '-shift-view' : '';
+    const fileName = `mbfd-${roster.isMock ? 'mock' : 'real'}-bid-${roster.year}-${roster.scope}${viewName}-seq-${roster.sequence}.${selection.data.format}`;
     return new Response(body, {
       status: 200,
       headers: {

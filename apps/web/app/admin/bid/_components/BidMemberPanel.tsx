@@ -153,9 +153,28 @@ export function BidMemberPanel({
     setOpen(false);
     memberTrigger.current?.focus();
   };
-  const assignment = current?.data?.person.assignments
-    .map((row) => [row.positionName, row.shift, row.station, row.unit].filter(Boolean).join(' · '))
-    .join(' / ');
+  const staffing = member.currentAssignment;
+  const assignment = staffing
+    ? staffing.evidenceStatus === 'RECORDED'
+      ? [
+          staffing.shift ? (staffing.shift === 'D' ? 'Days' : `${staffing.shift} Shift`) : null,
+          staffing.station,
+          staffing.unit,
+          staffing.positionLabel,
+          staffing.aDayGroup
+            ? `A-Day ${staffing.aDayGroup.replace(/^G(\d)$/, 'Group $1')}`
+            : staffing.shift === 'D'
+              ? null
+              : 'A-Day not recorded',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : null
+    : current?.data?.person.assignments
+        .map((row) =>
+          [row.positionName, row.shift, row.station, row.unit].filter(Boolean).join(' · '),
+        )
+        .join(' / ');
   const personnel = (children: (data: DepartmentPersonDetailResponse) => ReactNode) =>
     !current ? (
       <output className="text-sm text-muted-foreground">Loading member details…</output>
@@ -237,15 +256,25 @@ export function BidMemberPanel({
           <TabsPrimitive.Panel value="overview" className="space-y-5 outline-none">
             <section className="space-y-2 text-sm">
               <h3 className="font-semibold">Current staffing assignment</h3>
+              {assignment ? (
+                <p className="break-words">{assignment}</p>
+              ) : (
+                <p className="text-muted-foreground">Current staffing assignment is unavailable.</p>
+              )}
+              {staffing?.evidenceStatus === 'RECORDED' && staffing.sourceName ? (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Current staffing source</summary>
+                  <p className="mt-1 break-words">
+                    {staffing.sourceName}
+                    {staffing.sourceRow ? ` · Row ${staffing.sourceRow}` : ''}
+                  </p>
+                  {staffing.sourceRank ? (
+                    <p>Directory rank / position: {staffing.sourceRank}</p>
+                  ) : null}
+                </details>
+              ) : null}
               {personnel((data) => (
                 <>
-                  {assignment ? (
-                    <p className="break-words">{assignment}</p>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      No current reviewed staffing assignment.
-                    </p>
-                  )}
                   <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
                     <dt className="text-muted-foreground">Hire date</dt>
                     <dd>{data.person.serviceRecord.hiredAt ?? 'Not recorded'}</dd>

@@ -7,6 +7,22 @@ import type { MemberHistoricalContext } from '@mbfd/shared';
 
 export type Shift = 'A' | 'B' | 'C' | 'D';
 
+export interface CurrentStaffingContext {
+  evidenceStatus: 'RECORDED' | 'UNLINKED' | 'UNAVAILABLE';
+  positionId: string | null;
+  positionLabel: string | null;
+  shift: Shift | null;
+  station: string | null;
+  unit: string | null;
+  aDayGroup: 'G1' | 'G2' | 'G3' | 'G4' | null;
+  sourceRank: string | null;
+  sourceName: string | null;
+  sourceSha256: string | null;
+  sourceRow: number | null;
+  snapshotAt: string | null;
+  source: 'DIRECTORY_CSV' | 'REVIEWED_STAFFING' | null;
+}
+
 export interface MemberLite {
   id: number;
   firstName: string;
@@ -17,6 +33,7 @@ export interface MemberLite {
    *  when running the 2026 bid). NULL for new hires / unbackfilled rows. */
   priorPositionId?: string | null;
   historicalContext?: MemberHistoricalContext;
+  currentAssignment?: CurrentStaffingContext;
 }
 
 export interface PositionMeta {

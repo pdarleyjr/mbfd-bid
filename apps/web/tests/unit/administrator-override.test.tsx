@@ -526,28 +526,34 @@ describe('audited administrator override', () => {
     expect(container.textContent).toContain('holds A101');
     expect(button('Review adjustment').disabled).toBe(true);
   });
-  it('allows an explicit early seat award without A-Day and submits no fabricated group', async () => {
-    await mount();
-    await settle(() => button('Adjust bid').click());
-    await select('Administrator override member', '19');
-    await select('Administrator override open position', 'C103');
-    await input('Note (optional)', 'Out of order specialty award; A-Day later');
-    expect(button('Review adjustment').disabled).toBe(true);
-    await settle(() =>
-      (container.querySelector('input[aria-label="Pick A-Day later"]') as HTMLInputElement).click(),
-    );
-    await reviewAndAcknowledge();
-    expect(previews[0]).not.toHaveProperty('aDay');
-    expect(commands).toHaveLength(0);
-    await settle(() => button('Confirm administrator selection').click());
-    expect(commands[0]).toMatchObject({
-      type: 'live.record_selection',
-      memberId: 19,
-      positionId: 'C103',
-      adminOverride: { acknowledged: true },
-    });
-    expect(commands[0]).not.toHaveProperty('aDay');
-  });
+  it.each(['C103', 'B105'])(
+    'awards a firefighter %s with an optional empty note and deferred A-Day',
+    async (positionId) => {
+      await mount();
+      await settle(() => button('Adjust bid').click());
+      await select('Administrator override member', '19');
+      await select('Administrator override open position', positionId);
+      expect(button('Review adjustment').disabled).toBe(true);
+      await settle(() =>
+        (
+          container.querySelector('input[aria-label="Pick A-Day later"]') as HTMLInputElement
+        ).click(),
+      );
+      await reviewAndAcknowledge();
+      expect(previews[0]).not.toHaveProperty('aDay');
+      expect(commands).toHaveLength(0);
+      await settle(() => button('Confirm administrator selection').click());
+      expect(commands[0]).toMatchObject({
+        type: 'live.record_selection',
+        memberId: 19,
+        positionId,
+        reason: '',
+        adminOverride: { acknowledged: true },
+      });
+      expect(commands[0]).not.toHaveProperty('aDay');
+      expect(members['19']?.rank).toBe('FF');
+    },
+  );
   it('sets or changes an awarded member A-Day without moving or duplicating the seat', async () => {
     props = { ...props, fills: { A101: { member_id: 18, a_day: 'G1' } }, combatGroups: ['G1'] };
     await mount();
