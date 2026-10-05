@@ -5,6 +5,7 @@ import { type BidDefinitionContent, evaluate2026RankCapacity } from '@mbfd/share
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { RealBidAccess } from '../_components/RealBidAccess';
 import { annualGet } from '../annual-plan/annual-plan-client';
 import { LatestCredentialSource } from '../targetsolutions/LatestCredentialSource';
 
@@ -13,6 +14,7 @@ export function BidOperations({
   content,
   versionId,
   createdMockId,
+  createdRealId,
   disabled,
   ready,
   onCheckMock,
@@ -22,6 +24,7 @@ export function BidOperations({
   content: BidDefinitionContent;
   versionId: string | null;
   createdMockId?: string | null;
+  createdRealId?: string | null;
   disabled: boolean;
   ready: boolean | null;
   onCheckMock(): void;
@@ -73,6 +76,12 @@ export function BidOperations({
         Run the Bid
       </h2>
       <div className="flex flex-wrap items-center gap-2">
+        <RealBidAccess
+          year={year}
+          createdRealId={createdRealId ?? null}
+          onPrepare={() => onOpen('live')}
+          disabled={disabled || !versionId}
+        />
         <Button variant="primary" disabled={disabled || !versionId} onClick={onCheckMock}>
           New Mock Bid
         </Button>
@@ -84,9 +93,6 @@ export function BidOperations({
             Continue my Mock
           </Link>
         ) : null}
-        <Button disabled={disabled || !versionId} onClick={() => onOpen('live')}>
-          Prepare Real Bid
-        </Button>
         <Button onClick={() => onOpen('results')}>Results</Button>
         <Link
           href="/admin/rehearsal"

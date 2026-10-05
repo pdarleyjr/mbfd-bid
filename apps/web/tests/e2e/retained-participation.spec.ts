@@ -20,6 +20,9 @@ test('retained participation stays collapsed until reviewed and loads only a dra
   await page.route('**/api/auth/csrf', (route) =>
     route.fulfill({ json: { token: 'csrf_11111111-1111-4111-8111-111111111111' } }),
   );
+  await page.route('**/api/admin/annual-plan/2026', (route) =>
+    route.fulfill({ json: { plan: { year: 2026, sessions: [] } } }),
+  );
   await page.route('**/api/admin/bid/2026/**', (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/api/admin/bid/2026/', '');

@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import { RealBidAccess } from '../_components/RealBidAccess';
 import { RosterCard } from './RosterCards';
 import { groupRoster } from './roster-pagination';
 import { useRosterLayout } from './use-roster-layout';
@@ -97,6 +98,9 @@ export function TodayWorkspace({ initialDate }: { initialDate: string }) {
       className="mx-auto flex min-w-0 max-w-[120rem] flex-col gap-3 lg:h-full lg:min-h-0"
       aria-labelledby="today-heading"
     >
+      <div className="shrink-0">
+        <RealBidAccess year={Number(initialDate.slice(0, 4))} />
+      </div>
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div>
           <h1 id="today-heading" className="font-heading text-2xl font-bold tracking-tight">
