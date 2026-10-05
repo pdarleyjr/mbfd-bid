@@ -264,6 +264,8 @@ describe('final rank source receipt integrity and protected session integration'
       sessionBidderId?: number;
       canonicalBidderId?: number;
       canonicalBidderPool?: 'OFC' | 'FF';
+      repeatedStageRights?: boolean;
+      canonicalQueueCursor?: number;
     } = {},
   ) {
     const state: BidSessionState = {
@@ -271,15 +273,32 @@ describe('final rank source receipt integrity and protected session integration'
       currentPhase: 'position_bid',
       currentBidderId: options.canonicalBidderId ?? ACTIVE_BIDDER,
       turnStartedAtMs: NOW,
-      bidOrder: syntheticMembers.map((memberId, ordinal) => ({
-        memberId,
-        ordinal,
-        pool: memberId === ACTIVE_BIDDER ? (options.canonicalBidderPool ?? 'OFC') : 'OFC',
-        stageId: 'synthetic-captains',
-      })),
-      queueCursor: 6,
+      bidOrder: options.repeatedStageRights
+        ? [
+            { memberId: MEMBER, ordinal: 1, pool: 'OFC', stageId: 'days-captains' },
+            { memberId: MEMBER + 1, ordinal: 2, pool: 'OFC', stageId: 'days-captains' },
+            {
+              memberId: ACTIVE_BIDDER,
+              ordinal: 3,
+              pool: options.canonicalBidderPool ?? 'OFC',
+              stageId: 'days-captains',
+            },
+            ...syntheticMembers.map((memberId, ordinal) => ({
+              memberId,
+              ordinal: ordinal + 55,
+              pool: 'OFC' as const,
+              stageId: 'captains',
+            })),
+          ]
+        : syntheticMembers.map((memberId, ordinal) => ({
+            memberId,
+            ordinal,
+            pool: memberId === ACTIVE_BIDDER ? (options.canonicalBidderPool ?? 'OFC') : 'OFC',
+            stageId: 'synthetic-captains',
+          })),
+      queueCursor: options.canonicalQueueCursor ?? (options.repeatedStageRights ? 2 : 6),
       live: {
-        currentStageId: 'synthetic-captains',
+        currentStageId: options.repeatedStageRights ? 'days-captains' : 'synthetic-captains',
         completedStageIds: [],
         pausedPhase: null,
         lastSelectionBidId: null,
@@ -898,9 +917,14 @@ describe('final rank source receipt integrity and protected session integration'
     expect(rankReceiptCount().count).toBe(0);
   });
 
-  it('updates active future scoring at an exact checkpoint without changing five recorded fills, forced markers, corrections or history', async () => {
-    const active = seedActive();
+  it('updates active future scoring with repeated stage rights at the cursor without changing five recorded fills, forced markers, corrections or history', async () => {
+    const active = seedActive({ repeatedStageRights: true });
     expect(active.state.currentBidderId).toBe(ACTIVE_BIDDER);
+    expect(active.state.queueCursor).toBe(2);
+    expect(active.state.bidOrder.filter((entry) => entry.memberId === ACTIVE_BIDDER)).toEqual([
+      { memberId: ACTIVE_BIDDER, ordinal: 3, pool: 'OFC', stageId: 'days-captains' },
+      { memberId: ACTIVE_BIDDER, ordinal: 61, pool: 'OFC', stageId: 'captains' },
+    ]);
     expect(
       h.sqlite.prepare('SELECT current_bidder_id FROM bid_sessions WHERE id=?').get(SESSION),
     ).toEqual({ current_bidder_id: LEGACY_BIDDER });
@@ -963,6 +987,29 @@ describe('final rank source receipt integrity and protected session integration'
     expect(active.state.fills.D101?.aDay).toBe('G3');
     expect(active.state.live?.corrections).toHaveLength(1);
   });
+
+  it.each(['missing_cursor_entry', 'cursor_member_mismatch', 'cursor_pool_mismatch'])(
+    'rejects repeated stage rights with %s and preserves progress',
+    async (condition) => {
+      const active = seedActive({
+        repeatedStageRights: true,
+        ...(condition === 'missing_cursor_entry'
+          ? { canonicalQueueCursor: 100 }
+          : condition === 'cursor_member_mismatch'
+            ? { canonicalQueueCursor: 1 }
+            : { canonicalBidderPool: 'FF' as const }),
+      });
+      const before = hash(Buffer.from(h.sqlite.serialize()).toString('base64'));
+      expect(await loadActiveRankCheckpoint(h.env.DB, SESSION)).toEqual({
+        ok: false,
+        error: 'rank_source_active_state_invalid',
+      });
+      expect((await apply(SESSION, active.checkpoint)).status).toBe(409);
+      expect(await (await request('/2026/score-review')).json()).toMatchObject({ sessions: [] });
+      expect(rankReceiptCount().count).toBe(0);
+      expect(hash(Buffer.from(h.sqlite.serialize()).toString('base64'))).toBe(before);
+    },
+  );
 
   it.each(['expectedCanonicalSeq', 'expectedCanonicalStateSha256', 'archiveSha256'])(
     'rejects a stale active %s without changing progress or committing a receipt',

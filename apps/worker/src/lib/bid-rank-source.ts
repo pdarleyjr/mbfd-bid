@@ -86,8 +86,9 @@ export async function loadActiveRankCheckpoint(database: D1Database, sessionId: 
   const { bidDefinition: _pin, ...material } = JSON.parse(row.snapshot_json);
   const snapshot = BidSessionPolicySnapshotSchema.parse(material);
   // Canonical commands advance the bidder without rewriting the legacy session
-  // projection. Membership and pool come from canonical progress and its pin.
-  const currentRows = state?.bidOrder.filter((entry) => entry.memberId === state.currentBidderId);
+  // projection. The cursor identifies the current right when a member appears
+  // in several stages; membership and pool still come from the frozen pin.
+  const currentRow = state?.bidOrder[state.queueCursor];
   const currentMembers = snapshot.members.filter(
     (member) => member.memberId === state?.currentBidderId,
   );
@@ -97,9 +98,9 @@ export async function loadActiveRankCheckpoint(database: D1Database, sessionId: 
     canonical(state) !== canonical(JSON.parse(row.state_json)) ||
     state.currentPhase !== 'position_bid' ||
     (state.currentBidderId !== null &&
-      (currentRows?.length !== 1 ||
+      (currentRow?.memberId !== state.currentBidderId ||
         currentMembers.length !== 1 ||
-        currentRows[0]?.pool !== currentMembers[0]?.pool)) ||
+        currentRow.pool !== currentMembers[0]?.pool)) ||
     state.frozenAt !== null ||
     state.turnPausedAtMs != null ||
     !state.live ||
