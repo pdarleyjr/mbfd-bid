@@ -103,6 +103,13 @@ const LiveCommandBase = z.object({
   commandId: CommandIdSchema,
   bidSessionId: z.string().min(1),
   expectedSeq: ExpectedSeqSchema,
+  /** Bind confirmation to the reviewed scoring source even when its adoption
+   * leaves the canonical sequence and recorded selections unchanged. */
+  expectedScoreReceiptSha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable()
+    .optional(),
   actor: z.object({ id: z.number().int().positive(), role: z.literal('admin') }).strict(),
   reason: ReasonSchema,
   evidenceReference: z.string().trim().min(1).max(200).nullable(),
@@ -147,6 +154,8 @@ export const LiveBidCommandSchema = z.discriminatedUnion('type', [
   LiveCommandBase.extend({
     type: z.literal('live.correct_bid'),
     adminOverride: AdminBidOverrideSchema.optional(),
+    /** An explicitly forced replacement retains the existing force grant. */
+    forced: z.literal(true).optional(),
     // Corrections historically trimmed their note before receipt hashing.
     reason: BidOperationNoteSchema,
     memberId: z.number().int().positive(),

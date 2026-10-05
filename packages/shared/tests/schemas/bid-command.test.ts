@@ -8,6 +8,26 @@ import {
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('systemic reviewed adjustment envelopes', () => {
+  it('keeps source confirmation optional for historical envelopes and validates supplied digests', () => {
+    const command = {
+      v: 1,
+      type: 'live.pause',
+      commandId: COMMAND_ID,
+      bidSessionId: 'synthetic-session',
+      expectedSeq: 3,
+      actor: { id: 99, role: 'admin' },
+      evidenceReference: null,
+    };
+    expect(LiveBidCommandSchema.parse(command)).not.toHaveProperty('expectedScoreReceiptSha256');
+    for (const digest of [null, 'a'.repeat(64)])
+      expect(
+        LiveBidCommandSchema.safeParse({ ...command, expectedScoreReceiptSha256: digest }).success,
+      ).toBe(true);
+    for (const digest of ['', 'a'.repeat(63), 'A'.repeat(64), 7])
+      expect(
+        LiveBidCommandSchema.safeParse({ ...command, expectedScoreReceiptSha256: digest }).success,
+      ).toBe(false);
+  });
   it.each([
     {
       type: 'live.record_selection',

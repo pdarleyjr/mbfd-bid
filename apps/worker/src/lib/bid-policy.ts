@@ -2569,6 +2569,16 @@ export async function resolveFrozenSessionBidTarget(
   input: { bidSessionId: string; memberId: number; positionId: string },
 ): Promise<FrozenSessionBidTarget> {
   const frozen = await loadFrozenSessionBidPolicy(db, input.bidSessionId);
+  return resolveFrozenSessionBidTargetFromPolicy(frozen, input);
+}
+
+/** Resolve against the exact policy already authenticated for this command.
+ * Callers retain their fresh session integrity and sequence checks; this pure
+ * helper neither reads mutable source data nor caches across requests. */
+export function resolveFrozenSessionBidTargetFromPolicy(
+  frozen: FrozenSessionBidPolicy,
+  input: { memberId: number; positionId: string },
+): FrozenSessionBidTarget {
   if (!frozen.ok) return frozen;
 
   const member = frozen.snapshot.members.find((entry) => entry.memberId === input.memberId);

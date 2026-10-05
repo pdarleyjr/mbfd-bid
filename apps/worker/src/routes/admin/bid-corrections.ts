@@ -115,6 +115,7 @@ router.get('/:id/corrections', async (c) => {
   });
   return c.json({
     sequence: state.lastSeq,
+    scoreReceiptSha256: frozen.snapshot.scoreReferenceSource?.receiptSha256 ?? null,
     sealed: state.annual?.completion != null,
     sources,
     positions: frozen.snapshot.ruleBookMaterial.positions.map((position) => ({
@@ -171,6 +172,7 @@ router.post('/:id/corrections/preview', requireStepUpAuth(), async (c) => {
   return c.json({
     valid: true,
     expectedSeq: state.lastSeq,
+    scoreReceiptSha256: preview.scoreReceiptSha256 ?? null,
     before: event.before,
     after: event.after,
     reason: parsed.data.reason,

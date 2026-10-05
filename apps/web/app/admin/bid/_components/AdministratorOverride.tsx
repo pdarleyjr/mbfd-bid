@@ -16,6 +16,7 @@ type Warning = { code: string; message: string };
 type OverridePreview = {
   valid: true;
   expectedSeq: number;
+  scoreReceiptSha256: string | null;
   warnings: Warning[];
   memberId: number;
   positionId?: string;
@@ -64,7 +65,7 @@ interface Props {
 }
 
 function failureMessage(code: string | undefined) {
-  if (code === 'STALE_SEQUENCE' || code === 'SEQUENCE_CONFLICT')
+  if (code === 'STALE_SEQUENCE' || code === 'SEQUENCE_CONFLICT' || code === 'STALE_SCORE_REFERENCE')
     return 'The bid changed. Review the latest availability and preview this action again.';
   if (code?.includes('OCCUPIED') || code?.includes('FILLED'))
     return 'This position is already filled. Use Correct Bid to review its recorded award.';
@@ -222,7 +223,11 @@ export function AdministratorOverride(props: Props) {
     return member ? `${member.rank} ${member.firstName} ${member.lastName}`.trim() : `Member ${id}`;
   }
 
-  function commandBody(commandId: string, warningCodes: string[]) {
+  function commandBody(
+    commandId: string,
+    warningCodes: string[],
+    expectedScoreReceiptSha256?: string | null,
+  ) {
     return {
       v: 1,
       type:
@@ -235,6 +240,7 @@ export function AdministratorOverride(props: Props) {
               : 'live.disposition',
       commandId,
       expectedSeq: props.sequence,
+      ...(expectedScoreReceiptSha256 !== undefined ? { expectedScoreReceiptSha256 } : {}),
       reason: draft.reason.trim(),
       evidenceReference: null,
       memberId: draft.memberId,
@@ -323,6 +329,7 @@ export function AdministratorOverride(props: Props) {
     const body = commandBody(
       '',
       reviewed.warnings.map((warning) => warning.code),
+      reviewed.scoreReceiptSha256 ?? null,
     );
     const commandFingerprint = JSON.stringify(body);
     if (pending.current?.fingerprint !== commandFingerprint)

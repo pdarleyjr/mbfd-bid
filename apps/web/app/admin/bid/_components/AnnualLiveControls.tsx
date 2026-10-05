@@ -68,6 +68,7 @@ type FallbackReview = {
     }
 );
 type SpecialtyState = {
+  scoreReceiptSha256?: string | null;
   admin_override_allowed?: boolean;
   admin_override_member_ids?: number[];
   admin_override_position_ids?: string[];
@@ -345,6 +346,11 @@ function commandErrorMessage(
   status: number,
 ): string {
   const messages: Record<string, string> = {
+    STALE_SCORE_REFERENCE:
+      'The specialty priorities changed. Refresh the bid and review this action again.',
+    NORMAL_MUTATION_LEASE_ACTIVE: 'A bid update is being saved. Try again when it finishes.',
+    NORMAL_MUTATION_LEASE_UNKNOWN:
+      'Bid updates are temporarily unavailable. Refresh before recording another action.',
     LIVE_STAGE_NOT_ELIGIBLE:
       'This opportunity is outside the bidder’s current stage. Choose an open opportunity shown for this stage.',
     SPECIALTY_HIGHER_PRIORITY_UNRESOLVED:
@@ -469,6 +475,7 @@ export function AnnualLiveControls(props: Props) {
     fingerprint: string;
     commandId: string;
     expectedSeq: number;
+    expectedScoreReceiptSha256: string | null;
   } | null>(null);
   const lastLoadedSequence = useRef<number | null>(null);
   const [reason, setReason] = useState('');
@@ -1144,6 +1151,7 @@ export function AnnualLiveControls(props: Props) {
         fingerprint,
         commandId: crypto.randomUUID(),
         expectedSeq: state.sequence,
+        expectedScoreReceiptSha256: state.scoreReceiptSha256 ?? null,
       };
     try {
       const response = await csrfFetch(
@@ -1156,6 +1164,7 @@ export function AnnualLiveControls(props: Props) {
             type,
             commandId: pendingCommand.current.commandId,
             expectedSeq: pendingCommand.current.expectedSeq,
+            expectedScoreReceiptSha256: pendingCommand.current.expectedScoreReceiptSha256,
             reason: commandReason,
             evidenceReference: commandEvidenceReference,
             ...detail,

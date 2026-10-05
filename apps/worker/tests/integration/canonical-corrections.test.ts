@@ -8,7 +8,7 @@ import {
   type LiveBidCommand,
   LiveBidCommandSchema,
 } from '@mbfd/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   commitLiveBidCommand,
   loadCanonicalBidSessionState,
@@ -605,6 +605,99 @@ describe('canonical audited corrections', () => {
     expect(state.aDay?.picks.find((pick) => pick.memberId === CPT_A)?.aDay).toBe('G3');
   });
 
+  it('reassigns a cleared member through the ordinary selection command with replay and preserved history', async () => {
+    await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
+    await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
+    const revoked = await apply(correct('synthetic-c1', null));
+    expect(revoked.result.kind).toBe('accepted');
+    if (revoked.result.kind !== 'accepted') return;
+    const history = h.sqlite.prepare('SELECT * FROM bid_command_events ORDER BY seq').all();
+    const unaffected = structuredClone(state.fills['synthetic-c2']);
+    const command = {
+      ...common(),
+      type: 'live.record_selection',
+      memberId: CPT_A,
+      positionId: 'synthetic-c3',
+      aDay: 'G4',
+    } as LiveBidCommand;
+    const response = await apply(command);
+    expect(response.result.kind, JSON.stringify(response.result)).toBe('accepted');
+    expect(state.fills['synthetic-c3']).toMatchObject({ memberId: CPT_A, ordinal: 1, aDay: 'G4' });
+    expect(state.fills['synthetic-c2']).toEqual(unaffected);
+    expect(state.live?.corrections?.at(-1)).toMatchObject({
+      resolvesCorrectionBidId: (revoked.result.envelope.payload as { bidId: string }).bidId,
+      after: { positionId: 'synthetic-c3' },
+    });
+    expect(h.sqlite.prepare('SELECT * FROM bid_command_events ORDER BY seq LIMIT 3').all()).toEqual(
+      history,
+    );
+    expect((await apply(command)).result).toEqual(response.result);
+    expect((await loadCanonicalBidSessionState(h.env.DB, SESSION))?.fills).toEqual(state.fills);
+    expect(command.type).toBe('live.record_selection');
+  });
+
+  it('reviews and confirms a cleared member override with a new forced marker and exact correction lineage', async () => {
+    await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
+    await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
+    await accepted(apply(correct('synthetic-c1', null)));
+    const command = {
+      ...common(),
+      type: 'live.record_selection',
+      memberId: CPT_A,
+      positionId: 'synthetic-c3',
+      aDay: 'G4',
+      forced: true,
+      adminOverride: { acknowledged: true, warningCodes: [] },
+    } as LiveBidCommand;
+    const preview = await commitLiveBidCommand({
+      db: h.env.DB,
+      state,
+      command,
+      policy,
+      previewOnly: true,
+    });
+    expect(preview.result.kind, JSON.stringify(preview.result)).toBe('accepted');
+    if (preview.result.kind !== 'accepted') return;
+    const event = preview.result.envelope.payload as {
+      adminOverride: { warningCodes: string[] };
+      positionId: string;
+    };
+    expect(event.positionId).toBe('synthetic-c3');
+    const response = await apply({
+      ...command,
+      adminOverride: { acknowledged: true, warningCodes: event.adminOverride.warningCodes },
+    } as LiveBidCommand);
+    expect(response.result.kind, JSON.stringify(response.result)).toBe('accepted');
+    expect(state.fills['synthetic-c3']?.forced).toMatchObject({
+      commandId: command.commandId,
+      actorMemberId: CPT_A,
+    });
+    expect(state.live?.corrections?.at(-1)?.after?.fill.forced).toEqual(
+      state.fills['synthetic-c3']?.forced,
+    );
+  });
+
+  it('rejects a cleared member selection when its accepted revocation lineage is unavailable', async () => {
+    await accepted(select(CPT_A, 'synthetic-c1', 'G1'));
+    await accepted(apply(correct('synthetic-c1', null)));
+    const revoke = state.live?.corrections?.at(-1);
+    if (!revoke) throw new Error('Synthetic revocation required');
+    const prepare = h.env.DB.prepare.bind(h.env.DB);
+    const unavailableLineage = vi.spyOn(h.env.DB, 'prepare').mockImplementation((sql) => {
+      const statement = prepare(sql);
+      if (sql.includes('SELECT r.outcome,r.result_seq,e.seq,e.event_json'))
+        vi.spyOn(statement, 'first').mockResolvedValue(null);
+      return statement;
+    });
+    const before = structuredClone(state);
+    expect((await select(CPT_A, 'synthetic-c3', 'G4')).result).toMatchObject({
+      kind: 'rejected',
+      code: 'CORRECTION_SOURCE_RECEIPT_INVALID',
+    });
+    expect(state).toEqual(before);
+    unavailableLineage.mockRestore();
+  });
+
   it('rejects a specialty move while a higher priority qualified member remains unresolved', async () => {
     await accepted(apply({ ...common(), type: 'live.disposition', disposition: 'PASS' }));
     await accepted(select(CPT_B, 'synthetic-c2', 'G2'));
@@ -707,6 +800,7 @@ describe('canonical audited corrections', () => {
     expect(readback.status).toBe(200);
     expect(await readback.json()).toMatchObject({
       sequence: state.lastSeq,
+      scoreReceiptSha256: null,
       sources: [
         {
           memberId: CPT_A,
@@ -727,6 +821,7 @@ describe('canonical audited corrections', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       valid: true,
+      scoreReceiptSha256: null,
       before: { positionId: 'synthetic-c1' },
       after: { positionId: 'synthetic-c3' },
       constraintEffects: [

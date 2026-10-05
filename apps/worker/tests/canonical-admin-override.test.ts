@@ -9,13 +9,14 @@ import {
   LiveBidCommandSchema,
 } from '@mbfd/shared';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   commitLiveBidCommand,
   loadCanonicalBidSessionState,
 } from '../src/commands/canonical-command-service.js';
 import { type BidSessionState, emptyBidSessionState } from '../src/durable/bid-session-state.js';
 import { initializeAnnualOperations } from '../src/lib/annual-bid-operations.js';
+import * as bidPolicy from '../src/lib/bid-policy.js';
 import { evaluateFrozenADays } from '../src/lib/frozen-a-day.js';
 
 const migrations = resolve(fileURLToPath(new URL('.', import.meta.url)), '../migrations');
@@ -347,7 +348,78 @@ describe.each([
     readQueries = [];
     db = transactionalD1(sqlite, (query) => readQueries.push(query));
   });
-  afterEach(() => sqlite.close());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    sqlite.close();
+  });
+
+  it('binds same-sequence confirmation to reviewed score evidence while preserving accepted replay', async () => {
+    seed();
+    let receiptSha256: string | null = null;
+    const original = bidPolicy.loadFrozenSessionBidPolicy;
+    vi.spyOn(bidPolicy, 'loadFrozenSessionBidPolicy').mockImplementation(async (...args) => {
+      const frozen = await original(...args);
+      if (!frozen.ok || frozen.snapshot.v !== 3 || receiptSha256 === null) return frozen;
+      return {
+        ...frozen,
+        snapshot: {
+          ...frozen.snapshot,
+          scoreReferenceSource: {
+            v: 1 as const,
+            archiveSha256: 'a'.repeat(64),
+            receiptSha256,
+            sourceVersionId: 'synthetic-reviewed-source',
+          },
+        },
+      };
+    });
+    const initial = initialState();
+    const input = command('live.record_selection', {
+      memberId: 43,
+      positionId: 'A103',
+      adminOverride: override,
+    });
+    const before = await execute(initial, input, true);
+    expect(before.result.kind).toBe('accepted');
+    expect(before.scoreReceiptSha256).toBeNull();
+    if (before.result.kind !== 'accepted') throw new Error(before.result.code);
+    const warningCodes = (
+      before.result.envelope.payload as { adminOverride: { warningCodes: string[] } }
+    ).adminOverride.warningCodes;
+    // Adoption changes source metadata, while canonical sequence/awards stay
+    // unchanged. The old warning codes cannot authorize its new priority.
+    receiptSha256 = 'b'.repeat(64);
+    const stale = await execute(initial, {
+      ...input,
+      expectedScoreReceiptSha256: null,
+      adminOverride: { acknowledged: true, warningCodes },
+    } as LiveBidCommand);
+    expect(stale.result).toMatchObject({ code: 'STALE_SCORE_REFERENCE', currentSeq: 0 });
+    expect(stale.canonicalState).toBeNull();
+    expect(sqlite.prepare('SELECT count(*) AS count FROM bids').get()).toEqual({ count: 0 });
+    expect(
+      sqlite.prepare('SELECT count(*) AS count FROM canonical_bid_session_state').get(),
+    ).toEqual({
+      count: 0,
+    });
+    const refreshedInput = { ...input, commandId: command('live.pause', {}).commandId };
+    const refreshed = await execute(initial, refreshedInput, true);
+    expect(refreshed.scoreReceiptSha256).toBe(receiptSha256);
+    expect(refreshed.result.kind).toBe('accepted');
+    const confirmedInput = {
+      ...refreshedInput,
+      expectedScoreReceiptSha256: receiptSha256,
+      adminOverride: { acknowledged: true, warningCodes },
+    } as LiveBidCommand;
+    const accepted = await execute(initial, confirmedInput);
+    expect(accepted.result.kind).toBe('accepted');
+    const audits = sqlite.prepare('SELECT * FROM audit_log').all();
+    receiptSha256 = 'c'.repeat(64);
+    const replay = await execute(emptyBidSessionState(sessionId), confirmedInput);
+    expect(replay.result).toEqual(accepted.result);
+    expect(replay.canonicalState).toEqual(accepted.canonicalState);
+    expect(sqlite.prepare('SELECT * FROM audit_log').all()).toEqual(audits);
+  });
 
   it.each(['position_bid', 'a_day_bid'] as const)(
     'persists an overnight %s pause and resumes in a fresh coordinator with the same awards and clock',

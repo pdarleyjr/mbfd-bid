@@ -24,13 +24,14 @@ import {
   adminBidOverrideAcknowledges,
   hasAdminBidOverride,
 } from '../lib/admin-bid-override.js';
+import { unresolvedBidCorrections } from '../lib/bid-corrections.js';
 import { assertBidDefinitionRunIntegrity } from '../lib/bid-definition-integrity.js';
 import { evaluateBidFallback } from '../lib/bid-fallback.js';
 import { resolveBidPoolSelection } from '../lib/bid-opportunity-pool.js';
 import {
   eligibilityMemberFromFrozen,
   loadFrozenSessionBidPolicy,
-  resolveFrozenSessionBidTarget,
+  resolveFrozenSessionBidTargetFromPolicy,
 } from '../lib/bid-policy.js';
 import { unresolvedSpecialtyPriority } from '../lib/canonical-specialty-priority.js';
 import { evaluateFrozenADays } from '../lib/frozen-a-day.js';
@@ -700,9 +701,12 @@ export interface CommitLiveBidCommandInput {
 
 /** Shared Mock/Real command bundle. D1 is the sole authority; the DO only
  * serializes and then projects this returned state for sockets/restarts. */
-export async function commitLiveBidCommand(
-  input: CommitLiveBidCommandInput,
-): Promise<{ result: LiveBidCommandResult; canonicalState: BidSessionState | null }> {
+export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandInput): Promise<{
+  result: LiveBidCommandResult;
+  canonicalState: BidSessionState | null;
+  scoreReceiptSha256?: string | null;
+}> {
+  let input = submittedInput;
   const administratorOverride = hasAdminBidOverride(input.command);
   if (
     input.previewOnly &&
@@ -773,6 +777,91 @@ export async function commitLiveBidCommand(
       now,
     );
     return { result, canonicalState: null };
+  }
+  const currentFrozenPolicy = await loadCommandFrozenPolicy();
+  const scoreReceiptSha256 =
+    currentFrozenPolicy.ok && currentFrozenPolicy.snapshot.v === 3
+      ? (currentFrozenPolicy.snapshot.scoreReferenceSource?.receiptSha256 ?? null)
+      : null;
+  if (
+    !input.previewOnly &&
+    (input.command.expectedScoreReceiptSha256 ?? null) !== scoreReceiptSha256
+  ) {
+    const result: LiveBidCommandResult = {
+      kind: 'rejected',
+      commandId: input.command.commandId,
+      code: 'STALE_SCORE_REFERENCE',
+      currentSeq: current.lastSeq,
+    };
+    await recordRejectedReceipt(
+      input.db,
+      input.command as unknown as MockFreezeCommand,
+      requestSha256,
+      result as unknown as MockFreezeCommandResult,
+      now,
+    );
+    return { result, canonicalState: null };
+  }
+  // A cleared award retains its recorded correction lineage. Selecting that
+  // member again completes the replacement through the same audited path,
+  // without requiring the operator to find a second correction workflow.
+  // Receipt hashing/replay above remains bound to the original submitted pick.
+  const submittedCommand = input.command;
+  let automaticallyReplacedCorrectionId: string | null = null;
+  if (
+    submittedCommand.type === 'live.record_selection' &&
+    submittedCommand.fallback === undefined &&
+    submittedCommand.preferenceSheetId == null &&
+    input.policy.actionPermissions.some(
+      (grant) =>
+        grant.action === (administratorOverride ? 'force' : 'record_selection') &&
+        grant.actorMemberIds.includes(submittedCommand.actor.id),
+    )
+  ) {
+    const pending = unresolvedBidCorrections(current).filter(
+      (entry) => entry.before.fill.memberId === submittedCommand.memberId,
+    );
+    const source = pending.length === 1 ? pending[0] : undefined;
+    if (source !== undefined) {
+      automaticallyReplacedCorrectionId = source.bidId;
+      input = {
+        ...input,
+        command: {
+          v: submittedCommand.v,
+          type: 'live.correct_bid',
+          commandId: submittedCommand.commandId,
+          bidSessionId: submittedCommand.bidSessionId,
+          expectedSeq: submittedCommand.expectedSeq,
+          expectedScoreReceiptSha256: submittedCommand.expectedScoreReceiptSha256,
+          actor: submittedCommand.actor,
+          reason: submittedCommand.reason,
+          evidenceReference: submittedCommand.evidenceReference,
+          memberId: submittedCommand.memberId,
+          originalCommandId: source.commandId,
+          originalBidId: source.bidId,
+          originalPositionId: source.before.positionId,
+          originalADayCommandId: null,
+          operation: 'REPLACE',
+          replacement: {
+            positionId: submittedCommand.positionId,
+            aDay: submittedCommand.aDay ?? null,
+            membershipIds:
+              submittedCommand.membershipIds ??
+              (source.before.fill.membershipIds
+                ? [...source.before.fill.membershipIds]
+                : undefined),
+          },
+          ...(submittedCommand.pool ? { pool: submittedCommand.pool } : {}),
+          ...(submittedCommand.termDeparture
+            ? { termDeparture: submittedCommand.termDeparture }
+            : {}),
+          ...(submittedCommand.adminOverride
+            ? { adminOverride: submittedCommand.adminOverride }
+            : {}),
+          ...(submittedCommand.forced ? { forced: true } : {}),
+        },
+      };
+    }
   }
   let correctionSpecialtyRequest:
     | import('../lib/bid-corrections.js').CorrectionSpecialtyRequest
@@ -972,7 +1061,7 @@ export async function commitLiveBidCommand(
     }
   }
   if (
-    input.command.type === 'live.record_selection' &&
+    (input.command.type === 'live.record_selection' || input.command.type === 'live.correct_bid') &&
     input.command.forced &&
     !administratorOverride
   ) {
@@ -996,8 +1085,7 @@ export async function commitLiveBidCommand(
     const target =
       current.currentBidderId === null
         ? null
-        : await resolveFrozenSessionBidTarget(getDb(input.db), {
-            bidSessionId: input.command.bidSessionId,
+        : resolveFrozenSessionBidTargetFromPolicy(await loadCommandFrozenPolicy(), {
             memberId: current.currentBidderId,
             positionId: input.command.positionId,
           });
@@ -1128,6 +1216,12 @@ export async function commitLiveBidCommand(
     );
     return { result, canonicalState: null };
   }
+  if (automaticallyReplacedCorrectionId !== null) {
+    reduction.payload.positionId =
+      submittedCommand.type === 'live.record_selection' ? submittedCommand.positionId : null;
+    reduction.payload.submittedCommandType = submittedCommand.type;
+    reduction.payload.automaticallyReplacedCorrectionId = automaticallyReplacedCorrectionId;
+  }
   const overrideWarnings: AdminBidOverrideWarning[] = administratorOverride
     ? [
         ...((
@@ -1248,8 +1342,7 @@ export async function commitLiveBidCommand(
           positionId,
         };
     }
-    const target = await resolveFrozenSessionBidTarget(getDb(input.db), {
-      bidSessionId: input.command.bidSessionId,
+    const target = resolveFrozenSessionBidTargetFromPolicy(await loadCommandFrozenPolicy(), {
       memberId: fill.memberId,
       positionId,
     });
@@ -1360,7 +1453,9 @@ export async function commitLiveBidCommand(
     );
     const forced =
       input.command.type === 'live.force_selection' ||
-      (input.command.type === 'live.record_selection' && input.command.forced)
+      ((input.command.type === 'live.record_selection' ||
+        input.command.type === 'live.correct_bid') &&
+        input.command.forced)
         ? {
             commandId: input.command.commandId,
             actorMemberId: input.command.actor.id,
@@ -1577,7 +1672,7 @@ export async function commitLiveBidCommand(
     seq: reduction.state.lastSeq,
     envelope,
   };
-  if (input.previewOnly) return { result, canonicalState: reduction.state };
+  if (input.previewOnly) return { result, canonicalState: reduction.state, scoreReceiptSha256 };
   const eventJson = canonicalJson(reduction.payload);
   const archivePayload = canonicalJson({
     v: 1,

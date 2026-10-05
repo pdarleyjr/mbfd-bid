@@ -18,11 +18,18 @@ const ReviewSchema = z
           .object({
             id: sessionId,
             isMock: z.boolean(),
-            phase: z.literal('config'),
+            phase: z.enum(['config', 'position_bid']),
             alreadyApplied: z.boolean(),
             sourceReceiptSha256: digest.nullable(),
             expectedSnapshotSha256: digest,
             expectedVersionSha256: digest,
+            expectedCanonicalSeq: z
+              .number()
+              .int()
+              .nonnegative()
+              .max(Number.MAX_SAFE_INTEGER)
+              .nullable(),
+            expectedCanonicalStateSha256: digest.nullable(),
           })
           .strict(),
       )
@@ -35,6 +42,11 @@ const ReviewSchema = z
       new Set(review.sessions.map((session) => session.id)).size === review.sessions.length &&
       review.sessions.every(
         (session) => !session.alreadyApplied || session.sourceReceiptSha256 !== null,
+      ) &&
+      review.sessions.every((session) =>
+        session.phase === 'config'
+          ? session.expectedCanonicalSeq === null && session.expectedCanonicalStateSha256 === null
+          : session.expectedCanonicalSeq !== null && session.expectedCanonicalStateSha256 !== null,
       ),
   );
 type Review = z.infer<typeof ReviewSchema>;
@@ -46,6 +58,14 @@ const ReceiptSchema = z
     memberCount: z.number().int().nonnegative(),
     referenceCount: z.number().int().nonnegative(),
     alreadyApplied: z.boolean(),
+    activeCheckpoint: z
+      .object({
+        canonicalSeq: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        canonicalStateSha256: digest,
+        phase: z.literal('position_bid'),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 type ReviewState = { year: number; data: Review | null; loading: boolean; error: string | null };
@@ -63,6 +83,7 @@ export function BidRankSourceReview({ year }: { year: number }) {
   currentYear.current = year;
   const generation = useRef(0);
   const busyRef = useRef(false);
+  const reviewReadyRef = useRef(false);
   const controllerRef = useRef<AbortController | null>(null);
   const mutationFetch = useRef<ReturnType<typeof createCsrfAwareFetch> | null>(null);
 
@@ -70,6 +91,7 @@ export function BidRankSourceReview({ year }: { year: number }) {
     void year;
     generation.current++;
     busyRef.current = false;
+    reviewReadyRef.current = false;
     controllerRef.current?.abort();
     setSelectedSessionId('');
     setBusy(false);
@@ -85,6 +107,7 @@ export function BidRankSourceReview({ year }: { year: number }) {
   useEffect(() => {
     void reload;
     if (!open || busyRef.current) return;
+    reviewReadyRef.current = false;
     const controller = new AbortController();
     const operationGeneration = generation.current;
     const stillCurrent = () =>
@@ -109,15 +132,16 @@ export function BidRankSourceReview({ year }: { year: number }) {
       })
       .then((data) => {
         if (!stillCurrent()) return;
-        const preparedReal = data.sessions.filter((session) => !session.isMock);
-        setReview({ year, data: { ...data, sessions: preparedReal }, loading: false, error: null });
+        const realSessions = data.sessions.filter((session) => !session.isMock);
+        setReview({ year, data: { ...data, sessions: realSessions }, loading: false, error: null });
         setSelectedSessionId((previous) =>
-          preparedReal.some((session) => session.id === previous)
+          realSessions.some((session) => session.id === previous)
             ? previous
-            : preparedReal.length === 1
-              ? (preparedReal[0]?.id ?? '')
+            : realSessions.length === 1
+              ? (realSessions[0]?.id ?? '')
               : '',
         );
+        reviewReadyRef.current = true;
         setRequiresReload(false);
         setError(null);
       })
@@ -141,6 +165,7 @@ export function BidRankSourceReview({ year }: { year: number }) {
     const selected = session;
     if (
       busyRef.current ||
+      !reviewReadyRef.current ||
       !open ||
       !saved?.available ||
       !saved.archiveSha256 ||
@@ -178,13 +203,22 @@ export function BidRankSourceReview({ year }: { year: number }) {
             archiveSha256: saved.archiveSha256,
             expectedSnapshotSha256: selected.expectedSnapshotSha256,
             expectedVersionSha256: selected.expectedVersionSha256,
+            ...(selected.phase === 'position_bid'
+              ? {
+                  expectedCanonicalSeq: selected.expectedCanonicalSeq,
+                  expectedCanonicalStateSha256: selected.expectedCanonicalStateSha256,
+                }
+              : {}),
           }),
         },
       );
-      if (response.status === 409)
-        throw new Error(
-          'The source or prepared bid changed. Reload priorities before applying again.',
-        );
+      if (response.status === 409) {
+        if (stillCurrent()) {
+          reviewReadyRef.current = false;
+          setReview({ year, data: null, loading: false, error: null });
+        }
+        throw new Error('The source or bid changed. Reload priorities before applying again.');
+      }
       if (!response.ok)
         throw new Error(
           'Final priorities were not confirmed. Reload priorities before trying again.',
@@ -193,7 +227,12 @@ export function BidRankSourceReview({ year }: { year: number }) {
       if (
         !result.success ||
         result.data.sessionId !== selected.id ||
-        result.data.archiveSha256 !== saved.archiveSha256
+        result.data.archiveSha256 !== saved.archiveSha256 ||
+        (selected.phase === 'position_bid'
+          ? result.data.activeCheckpoint?.canonicalSeq !== selected.expectedCanonicalSeq ||
+            result.data.activeCheckpoint?.canonicalStateSha256 !==
+              selected.expectedCanonicalStateSha256
+          : result.data.activeCheckpoint !== undefined)
       )
         throw new Error(
           'The priority receipt could not be verified. Reload priorities before trying again.',
@@ -215,10 +254,13 @@ export function BidRankSourceReview({ year }: { year: number }) {
       setNotice(
         result.data.alreadyApplied
           ? 'Final priorities were already applied.'
-          : `Final priorities applied · ${result.data.memberCount} members · ${result.data.referenceCount} references.`,
+          : selected.phase === 'position_bid'
+            ? 'Remaining-pick priorities updated. Recorded selections are preserved.'
+            : `Final priorities applied · ${result.data.memberCount} members · ${result.data.referenceCount} references.`,
       );
     } catch (caught: unknown) {
       if (!stillCurrent()) return;
+      reviewReadyRef.current = false;
       setRequiresReload(true);
       setError(
         caught instanceof Error
@@ -244,22 +286,25 @@ export function BidRankSourceReview({ year }: { year: number }) {
       {open ? (
         <div className="space-y-3 py-3 text-sm">
           <p className="text-muted-foreground">
-            Uses the published rank lists for priority. Certification requirements and selections
-            stay unchanged.
+            {session?.phase === 'position_bid'
+              ? 'Updates remaining picks from the final lists. Recorded selections stay unchanged.'
+              : 'Uses the published rank lists for priority. Certification requirements and selections stay unchanged.'}
           </p>
           {current?.loading ? <output>Loading final priorities…</output> : null}
           {current?.data ? (
             !current.data.available ? (
               <p>Publish the final rank lists first.</p>
             ) : current.data.sessions.length === 0 ? (
-              <p>No prepared Real Bid is available.</p>
+              <p>No prepared or active Real Bid is available for this update.</p>
             ) : (
               <>
                 {current.data.sessions.length === 1 ? (
-                  <p>Prepared Real Bid</p>
+                  <p>
+                    {session?.phase === 'position_bid' ? 'Active Real Bid' : 'Prepared Real Bid'}
+                  </p>
                 ) : (
                   <label className="block space-y-2">
-                    <span className="block font-semibold">Prepared Real Bid</span>
+                    <span className="block font-semibold">Real Bid</span>
                     <select
                       value={selectedSessionId}
                       disabled={busy}
@@ -269,10 +314,10 @@ export function BidRankSourceReview({ year }: { year: number }) {
                       }}
                       className="block min-h-11 w-full rounded border border-input bg-background px-3"
                     >
-                      <option value="">Choose a prepared bid</option>
+                      <option value="">Choose a bid</option>
                       {current.data.sessions.map((entry) => (
                         <option key={entry.id} value={entry.id}>
-                          {entry.id}
+                          {entry.phase === 'position_bid' ? 'Active' : 'Prepared'} · {entry.id}
                         </option>
                       ))}
                     </select>
@@ -289,6 +334,11 @@ export function BidRankSourceReview({ year }: { year: number }) {
                 {session?.alreadyApplied ? (
                   <output className="block">Final priorities already applied.</output>
                 ) : null}
+                {session?.phase === 'position_bid' ? (
+                  <p className="text-muted-foreground">
+                    Bid checkpoint {session.expectedCanonicalSeq}
+                  </p>
+                ) : null}
               </>
             )
           ) : null}
@@ -296,7 +346,12 @@ export function BidRankSourceReview({ year }: { year: number }) {
             type="button"
             size="sm"
             disabled={busy || current?.loading}
-            onClick={() => setReload((value) => value + 1)}
+            onClick={() => {
+              reviewReadyRef.current = false;
+              setRequiresReload(true);
+              setNotice(null);
+              setReload((value) => value + 1);
+            }}
           >
             Reload priorities
           </Button>
@@ -318,7 +373,11 @@ export function BidRankSourceReview({ year }: { year: number }) {
             }
             onClick={() => void apply()}
           >
-            {busy ? 'Applying priorities…' : 'Apply final priorities'}
+            {busy
+              ? 'Applying priorities…'
+              : session?.phase === 'position_bid'
+                ? 'Update remaining picks'
+                : 'Apply final priorities'}
           </Button>
           {notice ? <output className="block text-success">{notice}</output> : null}
         </div>

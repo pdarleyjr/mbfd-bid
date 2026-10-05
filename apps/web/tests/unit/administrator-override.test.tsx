@@ -106,6 +106,7 @@ let previews: Record<string, unknown>[];
 let commands: Record<string, unknown>[];
 let previewIdentityWrong: boolean;
 let failCommandOnce: boolean;
+let scoreReceiptSha256: string | null;
 let props: Parameters<typeof AdministratorOverride>[0];
 let canonicalChange: ReturnType<typeof vi.fn<() => void>>;
 function response(body: unknown, status = 200) {
@@ -120,6 +121,7 @@ beforeEach(() => {
   commands = [];
   previewIdentityWrong = false;
   failCommandOnce = false;
+  scoreReceiptSha256 = null;
   canonicalChange = vi.fn<() => void>();
   props = {
     bidSessionId: 'isolated-synthetic',
@@ -151,6 +153,7 @@ beforeEach(() => {
       return response({
         valid: true,
         expectedSeq: body.expectedSeq,
+        scoreReceiptSha256,
         memberId: previewIdentityWrong ? 19 : body.memberId,
         ...(body.positionId ? { positionId: body.positionId } : {}),
         ...(body.type === 'live.record_a_day'
@@ -240,6 +243,19 @@ async function reviewAndAcknowledge() {
   );
 }
 describe('audited administrator override', () => {
+  it('echoes the exact score receipt reviewed before confirmation and uncertain delivery retry', async () => {
+    scoreReceiptSha256 = 'a'.repeat(64);
+    await mount();
+    await draftAward('19', 'C103');
+    await reviewAndAcknowledge();
+    scoreReceiptSha256 = 'b'.repeat(64);
+    failCommandOnce = true;
+    await settle(() => button('Confirm administrator selection').click());
+    await settle(() => button('Confirm administrator selection').click());
+    expect(commands).toHaveLength(2);
+    expect(commands[0]?.expectedScoreReceiptSha256).toBe('a'.repeat(64));
+    expect(commands[1]).toEqual(commands[0]);
+  });
   it('marks an explicitly forced award in both preview and confirmed command, while requiring advisory acknowledgement', async () => {
     await mount();
     await draftAward('19', 'C103');
