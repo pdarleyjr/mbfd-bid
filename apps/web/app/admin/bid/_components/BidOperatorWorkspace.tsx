@@ -1,12 +1,17 @@
 'use client';
 
 import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { type MemberLite, type PositionMeta, shortRank } from '../../../_components/bid/types';
 import { BidMemberPanel } from './BidMemberPanel';
 import { useBidOperator } from './BidOperatorContext';
 import styles from './BidOperatorWorkspace.module.css';
 import { useManualPick } from './ManualPickContext';
+import {
+  type OperatorSpecialtyCandidate,
+  specialtyCoverageWarnings,
+} from './operator-specialty-roster';
 
 type Fill = { memberId: number; ordinal: number; bidId: string };
 
@@ -25,6 +30,7 @@ export function BidOperatorWorkspace({
   sessionDetails,
   preview = false,
   sessionId,
+  minimumSequence = 0,
   bidYear,
 }: {
   members: Record<string, MemberLite>;
@@ -40,11 +46,18 @@ export function BidOperatorWorkspace({
   /** Before Start, history is readable but nobody is up to select a position. */
   preview?: boolean;
   sessionId?: string | undefined;
+  minimumSequence?: number;
   bidYear?: number | null | undefined;
 }) {
   const operator = useBidOperator();
+  const requiredSequence = Math.max(minimumSequence, operator?.boardSequence ?? 0);
   const manualPick = useManualPick();
   const [query, setQuery] = useState('');
+  const [rosterView, setRosterView] = useState<'seniority' | 'specialty'>('seniority');
+  const [specialtyId, setSpecialtyId] = useState('');
+  const [specialtyStatus, setSpecialtyStatus] = useState<'remaining' | 'taken' | 'all'>(
+    'remaining',
+  );
   const [mobileRail, setMobileRail] = useState<'remaining' | 'picked' | null>(null);
   const remainingToggle = useRef<HTMLButtonElement>(null);
   const pickedToggle = useRef<HTMLButtonElement>(null);
@@ -64,11 +77,18 @@ export function BidOperatorWorkspace({
   );
   const seatsByMember = useMemo(() => {
     const result = new Map<number, string[]>();
-    for (const [positionId, fill] of Object.entries(fills)) {
-      result.set(fill.memberId, [...(result.get(fill.memberId) ?? []), positionId]);
+    const published = operator?.aDayProjection;
+    const entries =
+      published && published.sessionId === sessionId && published.sequence >= requiredSequence
+        ? Object.entries(published.fills).map(
+            ([positionId, fill]) => [positionId, fill.member_id] as const,
+          )
+        : Object.entries(fills).map(([positionId, fill]) => [positionId, fill.memberId] as const);
+    for (const [positionId, memberId] of entries) {
+      result.set(memberId, [...(result.get(memberId) ?? []), positionId]);
     }
     return result;
-  }, [fills]);
+  }, [fills, operator?.aDayProjection, sessionId, requiredSequence]);
   const rows = useMemo(() => {
     const unique = [
       ...new Set([
@@ -86,6 +106,26 @@ export function BidOperatorWorkspace({
     seatsByMember.has(id) || temporarilyAssignedMemberIds.includes(id);
   const remaining = rows.filter(({ member }) => !recorded(member.id));
   const picked = rows.filter(({ member }) => recorded(member.id));
+  const publishedSpecialtyRoster = operator?.specialtyRoster;
+  const specialtyRoster =
+    publishedSpecialtyRoster &&
+    publishedSpecialtyRoster.sessionId === sessionId &&
+    publishedSpecialtyRoster.sequence >= requiredSequence
+      ? publishedSpecialtyRoster
+      : null;
+  const specialtyGroups =
+    specialtyRoster?.availability === 'AVAILABLE' ? specialtyRoster.groups : [];
+  const specialtyGroup =
+    specialtyGroups.find((group) => group.id === specialtyId) ?? specialtyGroups[0];
+  const coverageWarnings = specialtyCoverageWarnings(specialtyRoster);
+  const rosterSession = useRef(sessionId);
+  useEffect(() => {
+    if (rosterSession.current === sessionId) return;
+    rosterSession.current = sessionId;
+    setRosterView('seniority');
+    setSpecialtyId('');
+    setSpecialtyStatus('remaining');
+  }, [sessionId]);
   const search = query.toLowerCase().trim();
   const matches = (member: MemberLite) =>
     !search ||
@@ -103,24 +143,60 @@ export function BidOperatorWorkspace({
       setMobileRail(null);
     }
   };
-  const row = ({ member, ordinal }: { member: MemberLite; ordinal: number }, recorded: boolean) => {
+  const specialtyRows = (specialtyGroup?.candidates ?? []).flatMap((candidate) => {
+    const member = members[String(candidate.memberId)];
+    const taken = recorded(candidate.memberId);
+    if (
+      !member ||
+      !matches(member) ||
+      (specialtyStatus === 'remaining' && (!candidate.available || taken)) ||
+      (specialtyStatus === 'taken' && !taken)
+    )
+      return [];
+    return [{ member, ordinal: candidate.priority ?? null, specialty: candidate }];
+  });
+  const row = (
+    {
+      member,
+      ordinal,
+      specialty,
+    }: {
+      member: MemberLite;
+      ordinal: number | null;
+      specialty?: OperatorSpecialtyCandidate;
+    },
+    recorded: boolean,
+  ) => {
     const current = !preview && operator?.activeMemberId === member.id;
     const onDeck = !preview && !current && onDeckMemberIds[0] === member.id;
     return (
       <li key={member.id}>
         <button
           type="button"
-          data-testid={`operator-member-${recorded ? 'picked' : 'remaining'}-${member.id}`}
+          data-testid={`operator-member-${specialty ? 'specialty' : recorded ? 'picked' : 'remaining'}-${member.id}`}
+          data-priority={specialty ? (specialty.priority ?? 'unavailable') : undefined}
           data-status={current ? 'current' : onDeck ? 'on-deck' : recorded ? 'picked' : 'waiting'}
           aria-pressed={operator?.selectedMemberId === member.id}
           onClick={() => chooseMember(member.id)}
           className={`${styles.member} ${current ? styles.current : onDeck ? styles.onDeck : ''}`}
         >
-          <span className={styles.ordinal}>{ordinal}</span>
+          <span className={styles.ordinal}>{ordinal ?? '—'}</span>
           <span className="min-w-0">
             <span className="block font-semibold">
               {shortRank(member.rank)} {member.firstName} {member.lastName}
             </span>
+            {specialty ? (
+              <span className="block text-xs text-muted-foreground">
+                {specialty.points === null ? 'Qualified pool' : `${specialty.points} points`}
+                {specialty.priority === null && specialty.points !== null
+                  ? ' · Order unavailable'
+                  : ''}
+                {!specialty.available && !recorded ? ' · Unavailable' : ''}
+                {specialtyGroup?.criticalMemberIds.includes(member.id) ? (
+                  <span className="block font-semibold text-warning">Needed for coverage</span>
+                ) : null}
+              </span>
+            ) : null}
             {recorded ? (
               <span className="mt-1 block text-xs text-muted-foreground">
                 {(seatsByMember.get(member.id) ?? [])
@@ -193,9 +269,9 @@ export function BidOperatorWorkspace({
       >
         <header className={styles.railHeader}>
           <h2 className="text-sm font-bold">
-            {preview ? 'Bid members' : 'Remaining'}{' '}
+            {rosterView === 'specialty' ? 'Members' : preview ? 'Bid members' : 'Remaining'}{' '}
             <span className="ml-1 text-xs font-normal text-muted-foreground">
-              {remaining.length}
+              {rosterView === 'specialty' ? specialtyRows.length : remaining.length}
             </span>
           </h2>
           <Input
@@ -204,12 +280,77 @@ export function BidOperatorWorkspace({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+          <fieldset className={styles.rosterViews} aria-label="Roster order">
+            <button
+              type="button"
+              aria-pressed={rosterView === 'seniority'}
+              onClick={() => setRosterView('seniority')}
+            >
+              Seniority
+            </button>
+            <button
+              type="button"
+              aria-pressed={rosterView === 'specialty'}
+              onClick={() => setRosterView('specialty')}
+            >
+              Specialty
+            </button>
+          </fieldset>
+          {rosterView === 'specialty' ? (
+            <>
+              <NativeSelect
+                aria-label="Specialty roster"
+                value={specialtyGroup?.id ?? ''}
+                disabled={specialtyGroups.length === 0}
+                onChange={(event) => setSpecialtyId(event.target.value)}
+              >
+                {specialtyGroups.length === 0 ? <option value="">Lists unavailable</option> : null}
+                {specialtyGroups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.label}
+                  </option>
+                ))}
+              </NativeSelect>
+              <NativeSelect
+                aria-label="Specialty member status"
+                value={specialtyStatus}
+                onChange={(event) =>
+                  setSpecialtyStatus(event.target.value as 'remaining' | 'taken' | 'all')
+                }
+              >
+                <option value="remaining">Remaining</option>
+                <option value="taken">Already bid</option>
+                <option value="all">All qualified</option>
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                {specialtyGroup
+                  ? specialtyGroup.rankingCode
+                    ? 'Priority unavailable. Your adjustments remain available.'
+                    : `${specialtyGroup.rankingAvailable ? 'Priority order' : 'Qualified pool'} · ${specialtyGroup.eligibleMemberCount} remaining${specialtyGroup.remainingSeatCount === null ? '' : ` / ${specialtyGroup.remainingSeatCount} open seats`}`
+                  : specialtyRoster === null
+                    ? 'Specialty lists are updating.'
+                    : specialtyRoster.availability === 'UNAVAILABLE'
+                      ? 'Specialty lists could not be checked.'
+                      : 'No configured specialty lists.'}
+              </p>
+            </>
+          ) : null}
         </header>
         <ol aria-label="Member selection" className={styles.memberList}>
-          {remaining.filter(({ member }) => matches(member)).map((entry) => row(entry, false))}
-          {!remaining.some(({ member }) => matches(member)) ? (
+          {rosterView === 'specialty'
+            ? specialtyRows.map((entry) => row(entry, recorded(entry.member.id)))
+            : remaining.filter(({ member }) => matches(member)).map((entry) => row(entry, false))}
+          {(
+            rosterView === 'specialty'
+              ? specialtyRows.length === 0
+              : !remaining.some(({ member }) => matches(member))
+          ) ? (
             <li className="p-3 text-sm text-muted-foreground">
-              {search ? 'No matching members.' : 'All members have a recorded seat.'}
+              {search
+                ? 'No matching members.'
+                : rosterView === 'specialty'
+                  ? 'No members in this view.'
+                  : 'All members have a recorded seat.'}
             </li>
           ) : null}
         </ol>
@@ -221,6 +362,42 @@ export function BidOperatorWorkspace({
         ) : null}
       </aside>
       <div className={styles.center}>
+        {coverageWarnings.length > 0 || (specialtyRoster?.combinedShortage ?? 0) > 0 ? (
+          <details className={styles.coverageAlerts} aria-label="Staffing alerts">
+            <summary>
+              {coverageWarnings.length > 0
+                ? `${coverageWarnings.length} ${coverageWarnings.length === 1 ? 'specialty needs' : 'specialties need'} attention`
+                : 'Staffing coverage needs attention'}
+            </summary>
+            <ul>
+              {coverageWarnings.map((group) => (
+                <li key={group.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRosterView('specialty');
+                      setSpecialtyId(group.id);
+                      setSpecialtyStatus('remaining');
+                      setQuery('');
+                      setMobileRail('remaining');
+                    }}
+                  >
+                    <strong>{group.label}</strong> · {group.eligibleMemberCount} qualified /{' '}
+                    {group.remainingSeatCount} open
+                    {group.status === 'SHORTAGE' ? ' · Shortage' : ' · Low buffer'}
+                  </button>
+                </li>
+              ))}
+              {(specialtyRoster?.combinedShortage ?? 0) > 0 ? (
+                <li className="px-2 py-1">
+                  {specialtyRoster?.combinedShortage} open{' '}
+                  {specialtyRoster?.combinedShortage === 1 ? 'seat lacks' : 'seats lack'} enough
+                  remaining qualified members across overlapping specialties.
+                </li>
+              ) : null}
+            </ul>
+          </details>
+        ) : null}
         <div
           ref={memberContext}
           tabIndex={-1}

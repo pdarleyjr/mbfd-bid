@@ -1308,6 +1308,9 @@ export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandI
               policy: input.policy,
               fills: selectionReviewState.fills,
               positionId,
+              // Reduction above has already checked the explicit override's
+              // frozen force grant; ordinary and force-only picks stay ordered.
+              allowNonSequentialSelection: administratorOverride,
               ...('pool' in input.command && input.command.pool
                 ? { poolId: input.command.pool.poolId }
                 : {}),
@@ -1332,7 +1335,16 @@ export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandI
         );
         return { result: rejected, canonicalState: null };
       }
-      if (pooled.pool)
+      if (pooled.pool) {
+        const nextPositionId = pooled.pool.positionIds.find(
+          (id) => selectionReviewState.fills[id] === undefined,
+        );
+        if (administratorOverride && nextPositionId !== positionId)
+          addAdminBidOverrideWarning(
+            overrideWarnings,
+            'POOL_SLOT_ORDER_DEVIATION',
+            `This selection uses ${positionId} in ${pooled.pool.label} instead of its next configured open slot.`,
+          );
         reduction.payload.pool = {
           poolId: pooled.pool.id,
           label: pooled.pool.label,
@@ -1341,6 +1353,7 @@ export async function commitLiveBidCommand(submittedInput: CommitLiveBidCommandI
           sourceDecisionId: pooled.pool.sourceDecisionId,
           positionId,
         };
+      }
     }
     const target = resolveFrozenSessionBidTargetFromPolicy(await loadCommandFrozenPolicy(), {
       memberId: fill.memberId,

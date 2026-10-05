@@ -296,7 +296,7 @@ describe.each([
     await teardownTestD1(h);
   });
 
-  function commit(suppliedCommand?: LiveBidCommand) {
+  function commit(suppliedCommand?: LiveBidCommand, previewOnly = false) {
     const command: LiveBidCommand = suppliedCommand ?? {
       v: 1,
       type: commandType,
@@ -314,6 +314,7 @@ describe.each([
       state,
       command,
       policy,
+      previewOnly,
       nowMs: () => NOW + 1000,
       newId: () => `synthetic-eligibility-evidence-${++nextId}`,
     });
@@ -445,6 +446,17 @@ describe.each([
     };
   }
 
+  function overridePoolCommand(
+    positionId: string,
+    poolId: string | undefined = 'synthetic-pool',
+  ): Extract<LiveBidCommand, { type: 'live.record_selection' }> {
+    return {
+      ...poolCommand(positionId, poolId),
+      type: 'live.record_selection',
+      adminOverride: { acknowledged: true, warningCodes: [] },
+    };
+  }
+
   it('reserves the first configured slot and retains pool source provenance in its event', async () => {
     const result = await commit(poolCommand(POOL_FIRST));
     expect(result.result).toMatchObject({ kind: 'accepted' });
@@ -469,6 +481,100 @@ describe.each([
     });
     expectNoAwardEvidence();
   });
+
+  it.runIf(commandType === 'live.record_selection')(
+    'reviews and accepts an administrator exact-slot override once with pool provenance',
+    async () => {
+      const draft = overridePoolCommand(PRIOR_SEAT);
+      const preview = await commit(draft, true);
+      expect(preview.result).toMatchObject({
+        kind: 'accepted',
+        envelope: {
+          payload: {
+            pool: { poolId: 'synthetic-pool', positionId: PRIOR_SEAT },
+            adminOverride: { warningCodes: ['POOL_SLOT_ORDER_DEVIATION'] },
+          },
+        },
+      });
+      expectNoAwardEvidence();
+      const reviewed = {
+        ...draft,
+        adminOverride: {
+          acknowledged: true as const,
+          warningCodes: ['POOL_SLOT_ORDER_DEVIATION'],
+        },
+      };
+      const result = await commit(reviewed);
+      expect(result.result).toMatchObject({ kind: 'accepted', seq: 8 });
+      expect(result.canonicalState?.fills[PRIOR_SEAT]?.memberId).toBe(MEMBER);
+      expect(result.canonicalState?.fills[POOL_FIRST]).toBeUndefined();
+      expect(await commit(reviewed)).toEqual(result);
+      const events = h.sqlite
+        .prepare('SELECT event_json FROM bid_command_events WHERE bid_session_id=?')
+        .all(SESSION) as { event_json: string }[];
+      expect(events).toHaveLength(1);
+      expect(JSON.parse(events[0]?.event_json ?? '{}')).toMatchObject({
+        pool: {
+          poolId: 'synthetic-pool',
+          sourceDecisionId: 'synthetic-pool-decision',
+          positionId: PRIOR_SEAT,
+        },
+        adminOverride: { acknowledged: true, warningCodes: ['POOL_SLOT_ORDER_DEVIATION'] },
+      });
+    },
+  );
+
+  it.runIf(commandType === 'live.record_selection')(
+    'requires acknowledgement of the current exact-slot override advisory',
+    async () => {
+      const result = await commit(overridePoolCommand(PRIOR_SEAT));
+      expect(result.result).toMatchObject({
+        kind: 'rejected',
+        code: 'ADMIN_OVERRIDE_WARNING_ACKNOWLEDGEMENT_REQUIRED',
+      });
+      expectNoAwardEvidence();
+    },
+  );
+
+  it.runIf(commandType === 'live.record_selection').each([
+    [undefined, 'OPPORTUNITY_POOL_SELECTION_REQUIRED'],
+    ['foreign', 'OPPORTUNITY_POOL_SLOT_MISMATCH'],
+  ] as const)('rejects an administrator override with invalid pool %s', async (poolId, code) => {
+    const command = overridePoolCommand(PRIOR_SEAT, poolId);
+    const { pool: _pool, ...withoutPool } = command;
+    const result = await commit({
+      ...(poolId === undefined ? withoutPool : command),
+      adminOverride: { acknowledged: true, warningCodes: [] },
+    });
+    expect(result.result).toMatchObject({ kind: 'rejected', code });
+    expectNoAwardEvidence();
+  });
+
+  it.runIf(commandType === 'live.record_selection')(
+    'rejects an administrator exact-slot override of an occupied seat',
+    async () => {
+      state.fills[PRIOR_SEAT] = { memberId: 10002, ordinal: 2, bidId: 'synthetic-other-award' };
+      const result = await commit({
+        ...overridePoolCommand(PRIOR_SEAT),
+        adminOverride: { acknowledged: true, warningCodes: ['POOL_SLOT_ORDER_DEVIATION'] },
+      });
+      expect(result.result).toMatchObject({ kind: 'rejected', code: 'POSITION_FILLED' });
+      expectNoAwardEvidence();
+    },
+  );
+
+  it.runIf(commandType === 'live.record_selection')(
+    'does not grant exact-slot override authority to an actor without the frozen force grant',
+    async () => {
+      const result = await commit({
+        ...overridePoolCommand(PRIOR_SEAT),
+        actor: { id: 10002, role: 'admin' },
+        adminOverride: { acknowledged: true, warningCodes: ['POOL_SLOT_ORDER_DEVIATION'] },
+      });
+      expect(result.result).toMatchObject({ kind: 'rejected', code: 'LIVE_ACTION_FORBIDDEN' });
+      expectNoAwardEvidence();
+    },
+  );
 
   it('advances the immutable slot reservation after another member fills the first slot', async () => {
     state.fills[POOL_FIRST] = { memberId: 10002, ordinal: 2, bidId: 'synthetic-other-award' };

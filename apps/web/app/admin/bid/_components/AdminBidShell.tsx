@@ -96,7 +96,7 @@ export function AdminBidShell(props: Props) {
       isMock={props.isMock}
       mockControlRevision={props.mockControlRevision}
     >
-      <BidOperatorProvider currentBidderId={props.currentBidderId}>
+      <BidOperatorProvider key={props.bidSessionId} currentBidderId={props.currentBidderId}>
         <div className="flex h-full min-h-0 flex-col">
           {configuring || !managed ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1">
@@ -148,6 +148,7 @@ export function AdminBidShell(props: Props) {
           {managed || configuring ? (
             <BidOperatorWorkspace
               sessionId={props.bidSessionId}
+              minimumSequence={props.lastSeq}
               bidYear={props.bidYear}
               members={props.members}
               bidOrder={props.bidOrder}
@@ -189,6 +190,7 @@ export function AdminBidShell(props: Props) {
           ) : (
             <BidOperatorWorkspace
               sessionId={props.bidSessionId}
+              minimumSequence={props.lastSeq}
               bidYear={props.bidYear}
               members={props.members}
               bidOrder={props.bidOrder}

@@ -4,6 +4,7 @@ import { presentationApiPath } from '@/lib/presentation-link';
 import { ChevronLeft, ChevronRight, List, X } from 'lucide-react';
 import { type CSSProperties, type RefObject, useEffect, useRef, useState } from 'react';
 import { MockBanner } from '../_components/MockBanner';
+import { getSeatAppearance } from '../_components/bid/seat-appearance';
 import styles from './PresentationView.module.css';
 import {
   PRESENTATION_SHIFTS,
@@ -282,32 +283,55 @@ function PresentationBoard({ view }: { view: Presentation }) {
                   )}
                 </header>
                 <ol className={styles.seats}>
-                  {station.seats.map((position) => (
-                    <li
-                      key={position.id}
-                      className={`${styles.seat} ${position.filled_by ? styles.taken : ''}`}
-                      data-testid="presentation-seat"
-                      data-row-key={position.id}
-                      data-position-id={position.chief_directed ? undefined : position.id}
-                    >
-                      <div className={styles.seatRole}>
-                        <span className={styles.seatUnit} title={position.unit}>
-                          {position.chief_directed
-                            ? 'Chief directed'
-                            : `${position.id} · ${position.unit}`}
-                        </span>
-                        <strong title={position.position_name}>{position.position_name}</strong>
-                      </div>
-                      <div className={styles.seatOccupant}>
-                        <span>{position.filled_by?.name ?? 'Available'}</span>
-                        {position.assigned ? (
-                          <small className={styles.forced}>Assigned</small>
-                        ) : position.forced ? (
-                          <small className={styles.forced}>Forced</small>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
+                  {station.seats.map((position) => {
+                    const appearance = getSeatAppearance({
+                      rankRequired: position.rank_required,
+                      positionName: position.position_name,
+                      unit: position.unit,
+                    });
+                    return (
+                      <li
+                        key={position.id}
+                        className={`${styles.seat} ${position.filled_by ? styles.taken : ''}`}
+                        data-testid="presentation-seat"
+                        data-row-key={position.id}
+                        data-position-id={position.chief_directed ? undefined : position.id}
+                        data-seat-role={appearance.role}
+                        style={
+                          {
+                            '--seat-background': appearance.backgroundColor,
+                            '--seat-text': appearance.color,
+                            '--seat-muted': appearance.mutedColor,
+                          } as CSSProperties
+                        }
+                      >
+                        <div className={styles.seatRole}>
+                          <span className={styles.seatUnit} title={position.unit}>
+                            {position.chief_directed
+                              ? 'Chief directed'
+                              : `${position.id} · ${position.unit}`}
+                          </span>
+                          <strong title={position.position_name}>{position.position_name}</strong>
+                        </div>
+                        <div className={styles.seatOccupant}>
+                          <span>{position.filled_by?.name ?? 'Available'}</span>
+                          {position.assigned ? (
+                            <small className={styles.forced}>Assigned</small>
+                          ) : position.forced === true ? (
+                            <span
+                              role="img"
+                              aria-label="Forced assignment"
+                              title="Forced assignment"
+                              data-testid={`forced-marker-${position.id}`}
+                              className={styles.forcedMarker}
+                            >
+                              !
+                            </span>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ol>
               </section>
             ))}

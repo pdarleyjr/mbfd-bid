@@ -4,21 +4,23 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { StationGroupedGrid } from '../../../_components/bid/StationGroupedGrid';
+import { getSeatAppearance } from '../../../_components/bid/seat-appearance';
 import type { MemberLite, PositionMeta, Shift } from '../../../_components/bid/types';
 import { ErrorToast } from '../../../bid/_components/ErrorToast';
 import { ReconnectingOverlay } from '../../../bid/_components/ReconnectingOverlay';
 import { BidStoreProvider } from '../../../bid/_hooks/BidStoreContext';
-import { type BidStoreState, createBidStore } from '../../../bid/_hooks/useBidStore';
+import { type BidStoreState, type Fill, createBidStore } from '../../../bid/_hooks/useBidStore';
 import { useBidWebSocket } from '../../../bid/_hooks/useBidWebSocket';
 import { BidAdvisoryPanel } from './BidAdvisoryPanel';
 import { useBidOperator } from './BidOperatorContext';
 import { useManualPick } from './ManualPickContext';
+import { OperatorADayBoard } from './OperatorADayBoard';
 
 interface Props {
   bidSessionId: string;
   initialSeq: number;
   meMemberId: number;
-  initialFills: Record<string, { memberId: number; ordinal: number; bidId: string }>;
+  initialFills: Record<string, Fill>;
   /** Bidder the SSR snapshot believed was up — fed into the store so the
    *  client UI shows the right member before the WS connects (or if the WS
    *  state_snapshot ships currentBidderId=null because the DO is stale). */
@@ -59,6 +61,7 @@ export function AdminBoard({
   const operator = useBidOperator();
   const router = useRouter();
   const [localShift, setLocalShift] = useState<Shift>('A');
+  const [aDayView, setADayView] = useState(false);
   const visibleShift = selectedShift ?? localShift;
   const store = useMemo(() => {
     const s = createBidStore({ bidSessionId, initialSeq, meMemberId });
@@ -108,6 +111,9 @@ export function AdminBoard({
   useEffect(() => {
     refreshedSequence.current = Math.max(refreshedSequence.current, initialSeq);
   }, [initialSeq]);
+  useEffect(() => {
+    operator?.observeBoardSequence?.(Math.max(initialSeq, observedSequence));
+  }, [initialSeq, observedSequence, operator?.observeBoardSequence]);
 
   useEffect(() => {
     if (observedSequence <= refreshedSequence.current) return;
@@ -132,6 +138,29 @@ export function AdminBoard({
           onPositionClick={positionClickHandler}
           operatorLayout={workspace}
           selectedShift={visibleShift}
+          boardToggle={
+            managed ? (
+              <button
+                type="button"
+                aria-pressed={aDayView}
+                onClick={() => setADayView((value) => !value)}
+                className="min-h-11 rounded px-3 text-xs font-semibold hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+              >
+                A-Days
+              </button>
+            ) : undefined
+          }
+          alternateBoard={
+            aDayView ? (
+              <OperatorADayBoard
+                sessionId={bidSessionId}
+                minimumSequence={Math.max(initialSeq, observedSequence)}
+                shift={visibleShift}
+                positions={biddablePositions ?? []}
+                members={members}
+              />
+            ) : undefined
+          }
           onShiftChange={(shift) => {
             setLocalShift(shift);
             onShiftChange?.(shift);
@@ -167,6 +196,10 @@ export function AdminBoard({
                 key={position.id}
                 data-testid={`assigned-position-${position.id}`}
                 className="min-w-0 rounded border border-border bg-muted/50 px-2 py-1 text-xs"
+                style={{
+                  backgroundColor: getSeatAppearance(position).backgroundColor,
+                  color: getSeatAppearance(position).color,
+                }}
               >
                 <p className="truncate" title={`${position.id} · ${position.positionName}`}>
                   <strong>{position.id}</strong> · {position.positionName}

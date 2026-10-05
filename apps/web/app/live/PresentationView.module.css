@@ -243,13 +243,11 @@
   gap: 0.35rem;
   padding: 0.15rem 0.3rem;
   border-bottom: 1px solid rgb(var(--border));
-  background: rgb(var(--card));
-}
-.seat:nth-child(even) {
-  background: rgb(var(--muted) / 0.35);
+  background: var(--seat-background, rgb(var(--card)));
+  color: var(--seat-text, rgb(var(--foreground)));
 }
 .seat.taken {
-  background: rgb(236 253 245);
+  border-left: 3px solid rgb(4 120 87);
 }
 .seatRole {
   display: flex;
@@ -264,7 +262,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.62rem;
-  color: rgb(var(--muted-foreground));
+  color: var(--seat-muted, rgb(var(--muted-foreground)));
 }
 .seatRole strong {
   font-size: clamp(0.68rem, 0.68vw, 0.9rem);
@@ -285,7 +283,21 @@
 }
 .seat:not(.taken) .seatOccupant {
   font-weight: 400;
-  color: rgb(var(--muted-foreground));
+  color: var(--seat-muted, rgb(var(--muted-foreground)));
+}
+.forcedMarker {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgb(120 53 15);
+  border-radius: 50%;
+  background: white;
+  color: rgb(69 26 3);
+  font-size: 0.75rem;
+  font-weight: 900;
 }
 .forced {
   color: rgb(146 64 14);

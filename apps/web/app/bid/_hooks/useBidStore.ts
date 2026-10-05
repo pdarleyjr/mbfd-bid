@@ -1,10 +1,21 @@
 import type { BidEventEnvelope } from '@mbfd/shared';
 import { type StoreApi, createStore } from 'zustand';
 
-interface Fill {
+export interface Fill {
   memberId: number;
   ordinal: number;
   bidId: string;
+  aDay?: string | null;
+  forced?: { commandId: string; actorMemberId: number; reason: string; atMs: number };
+  aDayDeferral?: { commandId: string; actorMemberId: number; reason: string; positionId: string };
+  aDayOverride?: {
+    commandId: string;
+    actorMemberId: number;
+    reason: string;
+    positionId: string;
+    aDay: string;
+    warningCodes: readonly string[];
+  };
 }
 
 export interface BidStoreState {
@@ -45,7 +56,9 @@ export function createBidStore(init: {
       switch (env.type) {
         case 'state_snapshot': {
           const p = env.payload as {
-            fills: Array<{ positionId: string; memberId: number; ordinal: number }>;
+            fills: Array<
+              Pick<Fill, 'memberId' | 'ordinal'> & Partial<Fill> & { positionId: string }
+            >;
             currentBidderId: number | null;
             seq: number;
           };
@@ -60,7 +73,14 @@ export function createBidStore(init: {
           set((s) => {
             const merged: Record<string, Fill> = { ...s.fills };
             for (const f of p.fills) {
-              merged[f.positionId] = { memberId: f.memberId, ordinal: f.ordinal, bidId: '' };
+              const prior = merged[f.positionId];
+              const retained = prior?.memberId === f.memberId ? prior : undefined;
+              const { positionId, ...incoming } = f;
+              merged[positionId] = {
+                ...retained,
+                ...incoming,
+                bidId: f.bidId ?? retained?.bidId ?? '',
+              };
             }
             return {
               fills: merged,
@@ -82,6 +102,7 @@ export function createBidStore(init: {
             bidId: string;
             nextBidderId: number | null;
             idempotencyKey: string;
+            aDay?: string | null;
           };
           set((s) => {
             const pending = { ...s.pendingMine };
@@ -90,7 +111,13 @@ export function createBidStore(init: {
             return {
               fills: {
                 ...s.fills,
-                [p.positionId]: { memberId: p.memberId, ordinal: p.ordinal, bidId: p.bidId },
+                [p.positionId]: {
+                  ...(s.fills[p.positionId]?.memberId === p.memberId ? s.fills[p.positionId] : {}),
+                  memberId: p.memberId,
+                  ordinal: p.ordinal,
+                  bidId: p.bidId,
+                  ...(p.aDay !== undefined ? { aDay: p.aDay } : {}),
+                },
               },
               currentBidderId: p.nextBidderId,
               pendingMine: pending,

@@ -22,6 +22,7 @@ import { useBidOperator } from './BidOperatorContext';
 import { CorrectBid } from './CorrectBid';
 import { ReviewedBidAdjustment } from './ReviewedBidAdjustment';
 import { SessionPresentationLink } from './SessionPresentationLink';
+import type { OperatorSpecialtyRoster } from './operator-specialty-roster';
 
 type Candidate = {
   member_id: number;
@@ -68,6 +69,8 @@ type FallbackReview = {
     }
 );
 type SpecialtyState = {
+  specialty_roster?: OperatorSpecialtyRoster;
+  a_day_maximum_per_group?: number | null;
   scoreReceiptSha256?: string | null;
   admin_override_allowed?: boolean;
   admin_override_member_ids?: number[];
@@ -172,7 +175,10 @@ type SpecialtyState = {
     stageId: string | null;
     stage_label?: string | null;
   }>;
-  fills: Record<string, { member_id: number; a_day?: string | null; membership_ids?: string[] }>;
+  fills: Record<
+    string,
+    { member_id: number; a_day?: string | null; membership_ids?: string[]; forced?: boolean }
+  >;
   specialties: Array<{
     id: string;
     label: string;
@@ -558,6 +564,28 @@ export function AnnualLiveControls(props: Props) {
   useEffect(() => {
     operator?.setOverrideAllowed(state?.admin_override_allowed === true);
   }, [state?.admin_override_allowed, operator?.setOverrideAllowed]);
+  useEffect(() => {
+    if (!props.workspace) return;
+    operator?.setSpecialtyRoster(loadError === null ? (state?.specialty_roster ?? null) : null);
+    operator?.setADayProjection(
+      state !== null && loadError === null
+        ? {
+            sessionId: props.bidSessionId,
+            sequence: state.sequence,
+            combatGroups: state.a_day_combat_groups ?? [],
+            maximumPerGroup: state.a_day_maximum_per_group ?? null,
+            fills: state.fills,
+          }
+        : null,
+    );
+  }, [
+    props.workspace,
+    props.bidSessionId,
+    state,
+    loadError,
+    operator?.setSpecialtyRoster,
+    operator?.setADayProjection,
+  ]);
   useEffect(() => {
     if (!props.workspace || !loaded) return;
     const previous = selectionOwner.current;

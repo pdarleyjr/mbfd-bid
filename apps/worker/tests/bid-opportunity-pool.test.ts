@@ -172,4 +172,45 @@ describe('explicit frozen opportunity pools', () => {
       code: 'OPPORTUNITY_POOL_FULL',
     });
   });
+  it.each(['STATION_POOL', 'FLOAT_POOL'] as const)(
+    'allows an authorized exact open %s slot while preserving its frozen pool',
+    (kind) => {
+      const { material, policy, pool } = fixture();
+      Object.assign(pool, { kind });
+      expect(
+        resolveBidPoolSelection({
+          material,
+          policy,
+          fills: {},
+          positionId: 'a-second',
+          poolId: pool.id,
+          allowNonSequentialSelection: true,
+        }),
+      ).toEqual({ ok: true, pool });
+    },
+  );
+  it('keeps pool membership, validity and exact-slot occupancy mandatory for an override', () => {
+    const { material, policy } = fixture();
+    const resolve = (poolId?: string, fills = {}) =>
+      resolveBidPoolSelection({
+        material,
+        policy,
+        fills,
+        positionId: 'a-second',
+        ...(poolId === undefined ? {} : { poolId }),
+        allowNonSequentialSelection: true,
+      });
+    expect(resolve()).toEqual({ ok: false, code: 'OPPORTUNITY_POOL_SELECTION_REQUIRED' });
+    expect(resolve('foreign')).toEqual({ ok: false, code: 'OPPORTUNITY_POOL_SLOT_MISMATCH' });
+    expect(resolve('pool', { 'a-second': {} })).toEqual({
+      ok: false,
+      code: 'OPPORTUNITY_POOL_RESERVATION_STALE',
+    });
+    expect(resolve('pool', { 'z-first': {}, 'a-second': {} })).toEqual({
+      ok: false,
+      code: 'OPPORTUNITY_POOL_FULL',
+    });
+    item(material.rules, 1).requiredCriteriaJson = 'invalid';
+    expect(resolve('pool')).toEqual({ ok: false, code: 'OPPORTUNITY_POOL_SLOT_UNAVAILABLE' });
+  });
 });

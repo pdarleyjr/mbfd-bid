@@ -102,6 +102,9 @@ export function resolveBidPoolSelection(input: {
   fills: Readonly<Record<string, unknown>>;
   positionId: string;
   poolId?: string;
+  /** Server-controlled: only a reviewed administrator override with the frozen
+   * force grant may choose another exact open slot in this same valid pool. */
+  allowNonSequentialSelection?: boolean;
 }): { ok: true; pool: BidOpportunityPool | null } | { ok: false; code: string } {
   const validation = validateBidOpportunityPools(input.material, input.policy);
   if (!validation.ok) return validation;
@@ -116,6 +119,10 @@ export function resolveBidPoolSelection(input: {
     return { ok: false, code: 'OPPORTUNITY_POOL_SLOT_MISMATCH' };
   const next = pool.positionIds.find((id) => input.fills[id] === undefined);
   if (!next) return { ok: false, code: 'OPPORTUNITY_POOL_FULL' };
-  if (next !== input.positionId) return { ok: false, code: 'OPPORTUNITY_POOL_RESERVATION_STALE' };
+  if (
+    input.fills[input.positionId] !== undefined ||
+    (!input.allowNonSequentialSelection && next !== input.positionId)
+  )
+    return { ok: false, code: 'OPPORTUNITY_POOL_RESERVATION_STALE' };
   return { ok: true, pool };
 }
