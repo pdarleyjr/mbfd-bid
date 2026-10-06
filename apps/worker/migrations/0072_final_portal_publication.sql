@@ -14,18 +14,18 @@ CREATE TABLE final_portal_publications (
 );
 CREATE TRIGGER final_portal_publication_guard BEFORE INSERT ON final_portal_publications
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT (CASE WHEN NOT EXISTS (
     SELECT 1 FROM canonical_bid_session_state c JOIN bid_sessions s ON s.id=c.bid_session_id
     WHERE c.bid_session_id=NEW.bid_session_id AND c.current_seq=NEW.source_sequence
       AND s.is_mock=0 AND json_extract(c.state_json,'$.currentPhase')='complete'
-  ) THEN RAISE(ABORT,'final_publication_stale_or_not_real_complete') END;
-  SELECT CASE WHEN EXISTS (
+  ) THEN RAISE(ABORT,'final_publication_stale_or_not_real_complete') END);
+  SELECT (CASE WHEN EXISTS (
     SELECT 1 FROM final_portal_publications p WHERE p.bid_session_id=NEW.bid_session_id
       AND p.source_sequence=NEW.source_sequence AND
         (p.id<>NEW.id OR p.manifest_sha256<>NEW.manifest_sha256 OR
          p.source_result_hash<>NEW.source_result_hash OR
          p.hub_identity_receipt_sha256<>NEW.hub_identity_receipt_sha256)
-  ) THEN RAISE(ABORT,'final_publication_revision_conflict') END;
+  ) THEN RAISE(ABORT,'final_publication_revision_conflict') END);
 END;
 CREATE TRIGGER final_portal_publication_no_update BEFORE UPDATE ON final_portal_publications
 BEGIN SELECT RAISE(ABORT,'final_publication_immutable'); END;
