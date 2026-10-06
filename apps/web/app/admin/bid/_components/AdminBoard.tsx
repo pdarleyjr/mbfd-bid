@@ -40,7 +40,7 @@ interface Props {
 }
 
 type AssignedPosition = PositionMeta & {
-  readOnlyAssignment?: { memberId: number; name: string; rank: string };
+  readOnlyAssignment?: { memberId: number; name: string; rank: string; aDay?: string };
 };
 
 export function AdminBoard({
@@ -207,6 +207,9 @@ export function AdminBoard({
                 <p className="truncate font-semibold">
                   {position.readOnlyAssignment?.name}
                   <span className="ml-2 font-normal text-muted-foreground">Assigned</span>
+                  {position.readOnlyAssignment?.aDay ? (
+                    <span className="ml-2 font-normal">{position.readOnlyAssignment.aDay}</span>
+                  ) : null}
                 </p>
               </div>
             ))}

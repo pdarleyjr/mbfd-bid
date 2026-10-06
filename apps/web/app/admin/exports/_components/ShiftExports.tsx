@@ -6,13 +6,10 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 
-export type ShiftExportScope = 'A' | 'B' | 'C' | 'D' | 'ALL';
+import { type ShiftExportScope, shiftExportScope } from '../shift-export-scope';
+export { shiftExportScope, type ShiftExportScope } from '../shift-export-scope';
 type ShiftExportFormat = 'pdf' | 'xlsx';
 export type ShiftExportView = 'shift' | 'bid';
-
-export function shiftExportScope(value: unknown): ShiftExportScope {
-  return value === 'A' || value === 'B' || value === 'C' || value === 'D' ? value : 'ALL';
-}
 
 export function shiftExportHref(
   sessionId: string,

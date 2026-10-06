@@ -706,7 +706,9 @@ describe('managed Bid boundary for legacy authoring', () => {
       rules: 223,
       supersedes_legacy_reconciliation: true,
     });
-    expect(h.sqlite.serialize()).toEqual(beforeResume);
+    // Match the other byte-preservation gates; native Buffer equality avoids
+    // Vitest recursively comparing every byte as the additive schema grows.
+    deepStrictEqual(h.sqlite.serialize(), beforeResume);
     expect(
       h.sqlite
         .prepare(

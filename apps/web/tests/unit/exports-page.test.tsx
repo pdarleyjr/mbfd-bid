@@ -21,6 +21,7 @@ describe('Bid reports session context', () => {
     expect(html).toContain('<option value="D" selected="">Days</option>');
     expect(html).toContain('Previous exports could not be loaded');
     expect(html).toContain('Portal sync status could not be loaded');
+    expect(html).not.toContain('All picks synced to portal.');
     expect(html).not.toContain('Worker logs');
     expect(html).not.toContain('JWT');
   });

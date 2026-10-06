@@ -22,7 +22,7 @@ export const RankLabelSchema = z.enum([
 ]);
 export type RankLabel = z.infer<typeof RankLabelSchema>;
 
-export const PortalPayloadSchema = z.object({
+export const PortalPayloadV1Schema = z.object({
   bid_year: z.number().int(),
   bid_session_id: z.string().min(1),
   rank_label: RankLabelSchema,
@@ -39,4 +39,57 @@ export const PortalPayloadSchema = z.object({
   is_forced: z.boolean(),
   admin_actor_employee_id: z.string().nullable(),
 });
+const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+export const PortalPayloadV2Schema = z
+  .object({
+    payload_version: z.literal(2),
+    bid_year: z.number().int().min(2024).max(2099),
+    term_label: z.string().min(1),
+    bid_session_id: z.string().min(1),
+    employee_id: z.string().min(1),
+    rank_label: RankLabelSchema,
+    station_label: z.string().min(1),
+    shift_label: ShiftLabelSchema,
+    division_label: z.string().min(1),
+    unit_label: z.string().min(1),
+    position_id: z.string().min(1),
+    position_label: z.string().min(1),
+    bid_selection_label: z.string().min(1),
+    assignment_type: z.enum(['Assigned', 'Floating']),
+    assignment_source: z.enum(['bid_award', 'retained_nonbiddable']),
+    a_day_code: z.enum(['G1', 'G2', 'G3', 'G4', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']),
+    a_day_label: z.string().min(1),
+    picked_at: z.string().datetime().nullable(),
+    idempotency_key: z.string().min(1),
+    is_forced: z.boolean(),
+    admin_actor_employee_id: z.string().nullable(),
+    source_sequence: z.number().int().nonnegative(),
+    source_result_hash: Sha256Schema,
+    source_workbook_sha256: Sha256Schema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.assignment_source === 'bid_award' && value.picked_at === null)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['picked_at'],
+        message: 'Award timestamp required',
+      });
+    if (
+      value.assignment_source === 'retained_nonbiddable' &&
+      (value.picked_at !== null || value.is_forced || value.admin_actor_employee_id !== null)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Retained assignment has no pick provenance',
+      });
+  });
+export type PortalPayloadV2 = z.infer<typeof PortalPayloadV2Schema>;
+// Reject unsupported versions rather than stripping their exact-result fields as V1.
+export const PortalPayloadSchema = z.union([
+  PortalPayloadV2Schema,
+  PortalPayloadV1Schema.refine((value) => !('payload_version' in value)).and(
+    z.object({ payload_version: z.never().optional() }).passthrough(),
+  ),
+]);
 export type PortalPayload = z.infer<typeof PortalPayloadSchema>;

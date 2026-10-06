@@ -1,10 +1,11 @@
 import { bidContentHash } from './bid-definition-content.js';
 import { BidDefinitionSnapshotPinSchema } from './bid-definition-pin.js';
 import { escapeCsvField } from './csv-stream.js';
+import { loadFinalResultSource } from './final-result-source.js';
 import { loadOfficialAnnualCompletion } from './official-annual-completion.js';
 
 /** A deterministic download projection, not a publication action or mutable roster. */
-export async function loadBidResultPackage(db: D1Database, sessionId: string) {
+export async function loadCanonicalBidResultPackage(db: D1Database, sessionId: string) {
   const official = await loadOfficialAnnualCompletion(db, sessionId);
   if (!official.ok) return official;
   const { snapshot, completion } = official;
@@ -53,6 +54,40 @@ export async function loadBidResultPackage(db: D1Database, sessionId: string) {
     provenance: { ...completion.frozen, pin: pin?.success ? pin.data : null },
     externalPublication: 'REQUIRED_SEPARATELY',
     awards,
+  };
+  const serialized = JSON.stringify(document);
+  return { ok: true as const, document, serialized, packageSha256: bidContentHash(serialized) };
+}
+
+export async function loadBidResultPackage(db: D1Database, sessionId: string) {
+  const value = await loadCanonicalBidResultPackage(db, sessionId);
+  if (!value.ok) return value;
+  const source = await loadFinalResultSource(db, sessionId, value.document.completion.revision);
+  if (!source) return value;
+  const rows = new Map(source.rows.map((row) => [row.position_id, row]));
+  const document = {
+    ...value.document,
+    finalSource: {
+      publicationId: source.publicationId,
+      workbookSha256: source.workbookSha256,
+      manifestSha256: source.manifestSha256,
+      canonicalResultSha256: source.canonicalResultSha256,
+    },
+    awards: value.document.awards.map((award) => {
+      const row = rows.get(award.positionId);
+      return row
+        ? {
+            ...award,
+            position: row.position_label,
+            division: row.division_label,
+            bidSelection: row.bid_selection_label,
+            assignmentSource: row.assignment_source,
+          }
+        : award;
+    }),
+    retainedAssignments: source.rows
+      .filter((row) => row.assignment_source === 'retained_nonbiddable')
+      .map(({ employee_id: _employeeId, ...row }) => row),
   };
   const serialized = JSON.stringify(document);
   return { ok: true as const, document, serialized, packageSha256: bidContentHash(serialized) };

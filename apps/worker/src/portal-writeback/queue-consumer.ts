@@ -22,7 +22,7 @@ export interface ConsumerDeps {
   recordAudit: (input: {
     bidSessionId: string;
     action: 'portal_writeback_attempt' | 'portal_writeback_outcome';
-    targetKind: 'portal_writeback_queue' | 'bid';
+    targetKind: 'portal_writeback_queue' | 'bid' | 'final_portal_outbox';
     targetId: string;
     afterState: Record<string, unknown>;
     reason: string;

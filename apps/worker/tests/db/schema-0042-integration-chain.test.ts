@@ -149,9 +149,9 @@ function expectReviewedUpdateIntegrity(sqlite: Database.Database): void {
   ]);
 }
 
-describe('integration migration chain 0038 through 0071', () => {
+describe('integration migration chain 0038 through 0072', () => {
   it('is gap-free and applies from a fresh database through the final candidate', () => {
-    expect(migrationFiles().slice(-34)).toEqual([
+    expect(migrationFiles().slice(-35)).toEqual([
       '0038_live_policy_participation_and_amendments.sql',
       '0039_restore_rule_book_participation_guards.sql',
       '0040_annual_bid_operations.sql',
@@ -186,15 +186,20 @@ describe('integration migration chain 0038 through 0071', () => {
       '0069_bid_evidence_freeze.sql',
       '0070_credential_anomaly_review_revision.sql',
       '0071_bid_evidence_reviewed_updates.sql',
+      '0072_final_portal_publication.sql',
     ]);
 
     const sqlite = new Database(':memory:');
     sqlite.pragma('foreign_keys = ON');
-    const applied = applyThrough(sqlite, '0071_bid_evidence_reviewed_updates.sql');
-    expect(applied.at(-1)).toBe('0071_bid_evidence_reviewed_updates.sql');
+    const applied = applyThrough(sqlite, '0072_final_portal_publication.sql');
+    expect(applied.at(-1)).toBe('0072_final_portal_publication.sql');
     expectFinalIntegrity(sqlite);
     expectAnnualBidStructureCloneStateIntegrity(sqlite);
     expectReviewedUpdateIntegrity(sqlite);
+    expect(sqlite.prepare('SELECT COUNT(*) n FROM final_portal_publications').get()).toEqual({
+      n: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) n FROM final_portal_outbox').get()).toEqual({ n: 0 });
 
     // A D1 migration ledger would record every applied filename; a second
     // discovery sees no pending migration rather than replaying SQL files.

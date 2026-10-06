@@ -7,6 +7,7 @@ import {
 import { Hono } from 'hono';
 import { getDb } from '../../db/index.js';
 import { loadRuleBookCoverage, parseBidConfigurationSettings } from '../../lib/bid-policy.js';
+import { finalRankCode, loadFinalResultSource } from '../../lib/final-result-source.js';
 import { loadOfficialAnnualCompletion } from '../../lib/official-annual-completion.js';
 import { operationalDate } from '../../lib/operational-date.js';
 import { isIsoCalendarDate } from '../../lib/personnel-lifecycle.js';
@@ -153,6 +154,12 @@ router.get('/', async (c) => {
       const official = await loadOfficialAnnualCompletion(c.env.DB, candidate.id);
       if (!official.ok) continue;
       const awards = new Map(official.completion.participants.map((p) => [p.positionId, p]));
+      const finalSource = await loadFinalResultSource(
+        c.env.DB,
+        candidate.id,
+        official.completion.completion.revision,
+      );
+      const finalRows = new Map(finalSource?.rows.map((row) => [row.position_id, row]) ?? []);
       const identities = new Map(
         (official.snapshot.operatorIdentityProjection ?? []).map((m) => [m.memberId, m]),
       );
@@ -181,8 +188,10 @@ router.get('/', async (c) => {
               shift: p.shift,
               station: p.station,
               unit: p.unit,
-              position: p.positionName,
-              rank: p.rankRequired,
+              position: finalRows.get(p.id)?.position_label ?? p.positionName,
+              rank: finalRows.has(p.id)
+                ? finalRankCode(finalRows.get(p.id)?.rank_label)
+                : p.rankRequired,
               award: award
                 ? {
                     memberId: award.memberId,
@@ -190,7 +199,7 @@ router.get('/', async (c) => {
                     nameSource: identity ? 'frozen' : 'unavailable',
                   }
                 : null,
-              aDay: award?.aDay ?? null,
+              aDay: finalRows.get(p.id)?.a_day_code ?? award?.aDay ?? null,
             };
           }),
       };

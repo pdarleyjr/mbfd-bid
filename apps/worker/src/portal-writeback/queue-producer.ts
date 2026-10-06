@@ -42,6 +42,8 @@ export const QueueMessageSchema = z.object({
   payload: PortalPayloadSchema,
   attempts: z.number().int().nonnegative(),
   queueRowId: z.string().min(1),
+  /** Separate durable assignment outbox, including retained non-bidders. */
+  finalPublicationId: z.string().min(1).optional(),
 });
 
 export type QueueMessage = z.infer<typeof QueueMessageSchema>;

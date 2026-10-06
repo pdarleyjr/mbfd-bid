@@ -8,6 +8,7 @@ import { getDb } from '../db/index.js';
 import { bidSessions, bids, members, portalWritebackQueue } from '../db/schema.js';
 import { type AuditAction, auditInsertStatement } from '../lib/audit.js';
 import type { WorkerEnv } from '../types/env.js';
+import { claimFinalMessage, finalConsumerDeps } from './final-outbox.js';
 import { postBidAssignment } from './portal-client.js';
 import {
   type PortalPublicationPolicy,
@@ -117,6 +118,7 @@ async function lookupPortalBid(env: WorkerEnv, bidId: string): Promise<PortalBid
         isMock: bidSessions.isMock,
         bidSessionId: bids.bidSessionId,
         employeeId: members.employeeId,
+        portalSyncStatus: bids.portalSyncStatus,
       })
       .from(bids)
       .innerJoin(bidSessions, eq(bids.bidSessionId, bidSessions.id))
@@ -130,6 +132,7 @@ async function lookupPortalBid(env: WorkerEnv, bidId: string): Promise<PortalBid
       return { kind: 'missing' };
     }
     if (row.isMock) return { kind: 'mock' };
+    if (row.portalSyncStatus === 'superseded') return { kind: 'missing' };
     return { kind: 'live', bidSessionId: row.bidSessionId, employeeId: row.employeeId };
   } catch (err) {
     console.error('[portal-writeback] bid lookup failed', err);
@@ -155,6 +158,20 @@ export async function handlePortalQueueBatch(batch: MessageBatch, env: WorkerEnv
       continue;
     }
     const body: QueueMessage = parsed.data;
+    if (body.finalPublicationId) {
+      try {
+        const claim = await claimFinalMessage(env, body, nowMs);
+        if (claim === 'retry') {
+          message.retry();
+          continue;
+        }
+        if (claim === 'claimed') await handleMessage(body, finalConsumerDeps(env, deps), { nowMs });
+        message.ack();
+      } catch {
+        message.retry();
+      }
+      continue;
+    }
     // Plan 09 / Rehearsal Tooling — Task R8.
     // Skip mock-session bids: ack the message without posting to the live
     // portal. This is the second line of defence — the producer should

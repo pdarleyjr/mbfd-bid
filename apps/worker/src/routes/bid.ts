@@ -34,6 +34,7 @@ import {
 } from '../lib/current-staffing-source.js';
 import { validateEnv } from '../lib/env.js';
 import { refreshFederatedSession } from '../lib/federated-session.js';
+import { finalRankCode, loadFinalResultSource } from '../lib/final-result-source.js';
 import { projectFrozenNonBidAssignments } from '../lib/frozen-nonbid-assignments.js';
 import { evaluateFrozenOpenPositionEligibility } from '../lib/frozen-position-eligibility.js';
 import { verifyJwt } from '../lib/jwt.js';
@@ -300,6 +301,11 @@ bid.get('/presentation', async (c) => {
     currentBidderId === null ? undefined : identities.get(currentBidderId)?.employeeId,
   );
   const currentMember = safeMember(currentBidderId);
+  const finalSource =
+    !held && !session.isMock && canonical.currentPhase === 'complete'
+      ? await loadFinalResultSource(c.env.DB, bidSessionId, canonical.lastSeq)
+      : null;
+  const finalRows = new Map(finalSource?.rows.map((row) => [row.position_id, row]) ?? []);
   return c.json({
     mode: presentation.mode,
     held_at_sequence: presentation.heldAtSeq,
@@ -370,13 +376,22 @@ bid.get('/presentation', async (c) => {
       shift: position.shift,
       station: position.station,
       unit: position.unit,
-      position_name: position.positionName,
-      rank_required: position.rankRequired,
+      position_name: finalRows.get(position.id)?.position_label ?? position.positionName,
+      rank_required: finalRows.has(position.id)
+        ? finalRankCode(finalRows.get(position.id)?.rank_label)
+        : position.rankRequired,
       forced: fills[position.id]?.forced !== undefined,
       filled_by: safeMember(
         fills[position.id]?.memberId ?? fixedAssignments.get(position.id)?.memberId ?? null,
       ),
       ...(fixedAssignments.has(position.id) ? { assigned: true } : {}),
+      ...(finalRows.has(position.id)
+        ? {
+            a_day: finalRows.get(position.id)?.a_day_code,
+            bid_selection_label: finalRows.get(position.id)?.bid_selection_label,
+            assignment_source: finalRows.get(position.id)?.assignment_source,
+          }
+        : {}),
     })),
     exceptional_assignments: (held
       ? (held.exceptionalAssignments ?? [])
@@ -943,6 +958,11 @@ bid.get('/board', async (c) => {
       frozenBoardPolicy.snapshot.ruleBookMaterial.positions.map((position) => position.id),
     ),
   );
+  const finalSource =
+    canonicalState && !isMock && canonicalState.currentPhase === 'complete'
+      ? await loadFinalResultSource(c.env.DB, bidSessionId, canonicalState.lastSeq)
+      : null;
+  const finalRows = new Map(finalSource?.rows.map((row) => [row.position_id, row]) ?? []);
   return c.json({
     ...body,
     isMock,
@@ -959,7 +979,30 @@ bid.get('/board', async (c) => {
       .filter((position) => activePositionIds.has(position.id))
       .map((position) => {
         const assignment = readOnlyAssignments.get(position.id);
-        return { ...position, ...(assignment ? { readOnlyAssignment: assignment } : {}) };
+        const final = finalRows.get(position.id);
+        return {
+          ...position,
+          ...(final
+            ? {
+                positionName: final.position_label,
+                rankRequired: finalRankCode(final.rank_label),
+                unit: final.bid_selection_label,
+                division: final.division_label,
+                finalADay: final.a_day_code,
+                assignmentSource: final.assignment_source,
+              }
+            : {}),
+          ...(assignment
+            ? {
+                readOnlyAssignment: {
+                  ...assignment,
+                  ...(final
+                    ? { aDay: final.a_day_label, rank: finalRankCode(final.rank_label) }
+                    : {}),
+                },
+              }
+            : {}),
+        };
       }),
     advisory,
   });

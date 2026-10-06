@@ -3,6 +3,7 @@ import { and, eq, lte } from 'drizzle-orm';
 import { drainBidAuditOutbox } from './audit/archive-outbox.js';
 import { getDb } from './db/index.js';
 import { bidSessions, bids, members, portalWritebackQueue } from './db/schema.js';
+import { drainFinalOutbox } from './portal-writeback/final-outbox.js';
 import { resolvePortalPublicationPolicy } from './portal-writeback/publication-policy.js';
 import type { QueueMessage } from './portal-writeback/queue-producer.js';
 import { type DueQueueRow, runReconciliation } from './portal-writeback/reconciliation.js';
@@ -108,6 +109,7 @@ export async function handlePortalReconciliation(env: WorkerEnv): Promise<void> 
     },
   });
   console.info('[portal-reconciliation]', result);
+  await drainFinalOutbox(env);
 }
 
 /**

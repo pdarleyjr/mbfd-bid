@@ -10,7 +10,10 @@ import {
 } from './verify-reviewed-update-migration.mjs';
 
 const migrations = readdirSync('apps/worker/migrations')
-  .filter((name) => /^\d{4}_.+\.sql$/.test(name))
+  // This verifier is deliberately sealed to the historical 0071 operation.
+  .filter(
+    (name) => /^\d{4}_.+\.sql$/.test(name) && name <= '0071_bid_evidence_reviewed_updates.sql',
+  )
   .sort();
 const required = [
   'bid_evidence_freezes',

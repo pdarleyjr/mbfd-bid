@@ -8,6 +8,7 @@ import { bidSessions, bids } from '../db/schema.js';
 import type { BidSessionState } from '../durable/bid-session-state.js';
 import { loadFrozenSessionBidPolicy } from '../lib/bid-policy.js';
 import type { CurrentStaffingReceipt } from '../lib/current-staffing-source.js';
+import { loadFinalResultSource } from '../lib/final-result-source.js';
 import { projectFrozenNonBidAssignments } from '../lib/frozen-nonbid-assignments.js';
 import { activeLivePositionIds } from '../lib/live-bid-opportunities.js';
 
@@ -374,7 +375,7 @@ export async function captureShiftRoster(
         // Superseded awards remain history, never a second current assignment.
         .where(and(eq(bids.bidSessionId, sessionId), ne(bids.portalSyncStatus, 'superseded')))
         .all();
-  return buildShiftRoster({
+  const roster = buildShiftRoster({
     sessionId,
     year: session.bidYear,
     isMock: session.isMock,
@@ -387,4 +388,21 @@ export async function captureShiftRoster(
     generatedAt: new Date().toISOString(),
     ...(currentStaffing !== undefined ? { currentStaffing } : {}),
   });
+  if (state && !session.isMock) {
+    const source = await loadFinalResultSource(database, sessionId, state.lastSeq);
+    const finalRows = new Map(source?.rows.map((row) => [row.position_id, row]) ?? []);
+    for (const shift of roster.shifts)
+      for (const station of shift.stations)
+        for (const row of station.rows) {
+          const final = finalRows.get(row.positionId);
+          if (!final) continue;
+          row.position = final.position_label;
+          row.unit = final.bid_selection_label;
+          row.division = final.division_label;
+          row.memberRank = final.rank_label;
+          row.aDay = final.a_day_label;
+          row.isFloating = final.assignment_type === 'Floating';
+        }
+  }
+  return roster;
 }

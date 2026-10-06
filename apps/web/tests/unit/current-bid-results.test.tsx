@@ -102,6 +102,52 @@ async function selectRun(id: string) {
 }
 
 describe('Current Bid read-only results', () => {
+  it('displays the exact final source selection and seat and keeps retained assignments separate', async () => {
+    const original = responseFor;
+    responseFor = async (url) =>
+      url.endsWith('/live-synthetic/results')
+        ? response({
+            ...result(),
+            awards: [
+              {
+                ...result().awards[0],
+                positionName: 'Firefighter #1',
+                unit: 'Combat Float',
+                rank: 'Firefighter',
+                finalSource: true,
+                pool: {
+                  id: 'pool',
+                  label: 'Older generic pool',
+                  kind: 'FLOAT_POOL',
+                  sourceRef: 'Synthetic source',
+                  sourceDecisionId: 'decision',
+                },
+              },
+            ],
+            retainedAssignments: [
+              {
+                positionId: 'A211',
+                positionName: 'Division Chief',
+                unit: '300',
+                rank: 'Division Chief',
+                shift: 'A Shift',
+                station: 'Station #2',
+                aDay: 'Group 3',
+                name: 'Synthetic Retained Member',
+              },
+            ],
+          })
+        : original(url);
+    await mount();
+    await selectRun('live-synthetic');
+    expect(container.textContent).toContain('Combat Float');
+    expect(container.textContent).toContain('Firefighter #1');
+    expect(container.textContent).not.toContain('Older generic pool');
+    const retained = container.querySelector('[aria-label="Retained assignments"]');
+    expect(retained?.textContent).toContain('Synthetic Retained Member');
+    expect(retained?.textContent).toContain('Group 3');
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
+  });
   it('labels a pool award and frozen memberships while retaining the concrete slot provenance', async () => {
     const original = responseFor;
     responseFor = async (url) =>
