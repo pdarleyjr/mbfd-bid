@@ -162,6 +162,6 @@ describe('postBidAssignment (Plan 08 Task 20)', () => {
     });
 
     const calls = fetchImpl.mock.calls as unknown as [[string, RequestInit]];
-    expect(calls[0][1].redirect).toBe('error');
+    expect(calls[0][1].redirect).toBe('manual');
   });
 });

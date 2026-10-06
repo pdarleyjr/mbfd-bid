@@ -47,16 +47,23 @@ export async function postBidAssignment(a: PostArgs): Promise<PostResult> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await a.fetchImpl(url, {
+    // Workerd's native fetch requires its global receiver, not the PostArgs object.
+    const res = await a.fetchImpl.call(globalThis, url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${a.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(a.payload),
-      redirect: 'error',
+      redirect: 'manual',
       signal: ctrl.signal,
     });
+    if (res.status >= 300 && res.status < 400)
+      return {
+        kind: 'permanent',
+        statusCode: res.status,
+        message: 'Portal redirect is not permitted',
+      };
     if (res.status === 409 && 'payload_version' in a.payload && a.payload.payload_version === 2) {
       const receipt = (await res.json().catch(() => null)) as { code?: string } | null;
       if (receipt?.code !== 'already_recorded')
