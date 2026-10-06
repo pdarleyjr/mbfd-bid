@@ -57,6 +57,15 @@ export async function postBidAssignment(a: PostArgs): Promise<PostResult> {
       redirect: 'error',
       signal: ctrl.signal,
     });
+    if (res.status === 409 && 'payload_version' in a.payload && a.payload.payload_version === 2) {
+      const receipt = (await res.json().catch(() => null)) as { code?: string } | null;
+      if (receipt?.code !== 'already_recorded')
+        return {
+          kind: 'permanent',
+          statusCode: 409,
+          message: 'Portal returned a conflict without an exact idempotency receipt',
+        };
+    }
     if (res.status === 200 || res.status === 409) {
       return { kind: 'synced', statusCode: res.status };
     }

@@ -10,6 +10,7 @@
 | `0060_bid_definition_run_pins.sql` | Hand-written (Unified Bid) | Adds four nullable provenance columns to existing snapshots. New managed snapshots require complete version identity; historical bytes and NULL provenance remain untouched. Protects snapshot and pinned parent identities against deletion and replacement, including SQLite rowid conflicts. |
 | `0061_bid_context_source_revision.sql` | Hand-written (Unified Bid) | Invalidates preparation when a pending adverse TargetSolutions review changes its member/credential identity without changing classification. Existing classification and application invalidation remains unchanged. |
 | `0062_bid_receipt_row_identity.sql` | Hand-written (Unified Bid) | Preserves configuration and annual-plan receipts against implicit rowid replacement/movement, including annual same-key replacement with recursive triggers disabled. Existing receipt bytes remain unchanged. |
+| `0072_final_portal_publication.sql` | Hand-written (Final Bid results) | Adds immutable reviewed final-source publication receipts and a general assignment outbox. Retained assignments have no synthetic `bids` row. A Real completed canonical sequence is required atomically. Existing canonical state and historical receipts remain unchanged. |
 
 ## Why `_journal.json` starts at `0002`
 

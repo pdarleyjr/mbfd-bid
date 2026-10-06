@@ -49,6 +49,7 @@ import {
   unresolvedSpecialtyPriority,
 } from '../../lib/canonical-specialty-priority.js';
 import { projectFrozenCredentialCoverage } from '../../lib/credential-coverage-advisory.js';
+import { loadFinalResultSource } from '../../lib/final-result-source.js';
 import { frozenADayConstraints } from '../../lib/frozen-a-day.js';
 import { requiresCanonicalBidMutation } from '../../lib/legacy-bid-mutation-boundary.js';
 import {
@@ -273,6 +274,11 @@ router.get('/:id/results', async (c) => {
       `${person.firstName} ${person.lastName}`.trim(),
     ]),
   );
+  const finalSource =
+    canonical && !session.isMock && canonical.currentPhase === 'complete'
+      ? await loadFinalResultSource(c.env.DB, sessionId, canonical.lastSeq)
+      : null;
+  const finalRows = new Map(finalSource?.rows.map((row) => [row.position_id, row]) ?? []);
   return c.json({
     session: {
       id: sessionId,
@@ -320,10 +326,17 @@ router.get('/:id/results', async (c) => {
               sourceDecisionId: pool.sourceDecisionId,
             }
           : null,
-        positionName: position?.positionName ?? null,
+        positionName: finalRows.get(positionId)?.position_label ?? position?.positionName ?? null,
         shift: position?.shift ?? null,
         station: position?.station ?? null,
-        unit: position?.unit ?? null,
+        unit: finalRows.get(positionId)?.bid_selection_label ?? position?.unit ?? null,
+        ...(finalRows.has(positionId)
+          ? {
+              rank: finalRows.get(positionId)?.rank_label,
+              finalSource: true,
+              division: finalRows.get(positionId)?.division_label,
+            }
+          : {}),
         aDay:
           canonical?.aDay?.picks.find((pick) => pick.memberId === fill.memberId)?.aDay ??
           fill.aDay ??
@@ -349,6 +362,27 @@ router.get('/:id/results', async (c) => {
           : {}),
       };
     }),
+    ...(finalSource
+      ? {
+          retainedAssignments: finalSource.rows
+            .filter((row) => row.assignment_source === 'retained_nonbiddable')
+            .map((row) => ({
+              positionId: row.position_id,
+              positionName: row.position_label,
+              unit: row.bid_selection_label,
+              rank: row.rank_label,
+              shift: row.shift_label,
+              station: row.station_label,
+              aDay: row.a_day_label,
+              name:
+                names.get(
+                  snapshot?.operatorIdentityProjection?.find(
+                    (identity) => identity.employeeId === row.employee_id,
+                  )?.memberId ?? -1,
+                ) ?? null,
+            })),
+        }
+      : {}),
     completion: { verified: official.ok, blockers: official.ok ? [] : [official.error] },
     exceptional_assignments: (canonical?.live?.exceptionalAssignments ?? [])
       .filter((entry) => entry.releasedAtMs === null)

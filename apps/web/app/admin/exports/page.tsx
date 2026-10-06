@@ -6,12 +6,14 @@ import { serverWorkerFetch } from '@/lib/server-worker-fetch';
 import { DirectCsvExports } from './_components/DirectCsvExports';
 import { ExportCard } from './_components/ExportCard';
 import { ExportTriggerButton } from './_components/ExportTriggerButton';
+import { FinalPortalPublicationControls } from './_components/FinalPortalPublicationControls';
 import { PortalSyncStatus } from './_components/PortalSyncStatus';
 import {
   type ActiveExportSession,
   SessionSelectionPanel,
 } from './_components/SessionSelectionPanel';
-import { ShiftExports, shiftExportScope } from './_components/ShiftExports';
+import { ShiftExports } from './_components/ShiftExports';
+import { shiftExportScope } from './shift-export-scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,16 +94,28 @@ async function fetchExports(
   }
 }
 
-async function fetchPortalStatus(
-  sid: string,
-): Promise<{ bids: PortalBidRow[]; fetchError: string | null }> {
+async function fetchPortalStatus(sid: string): Promise<{
+  bids: PortalBidRow[];
+  finalPublication?: { counts: Record<string, number>; latest: Record<string, unknown> | null };
+  fetchError: string | null;
+}> {
   try {
     const res = await serverWorkerFetch(`/api/admin/portal-status/${encodeURIComponent(sid)}`);
     if (!res.ok) {
       return { bids: [], fetchError: `Worker returned ${res.status}` };
     }
-    const body = (await res.json()) as { bids?: PortalBidRow[] };
-    return { bids: body.bids ?? [], fetchError: null };
+    const body = (await res.json()) as {
+      bids?: PortalBidRow[];
+      final_publication?: {
+        counts: Record<string, number>;
+        latest: Record<string, unknown> | null;
+      };
+    };
+    return {
+      bids: body.bids ?? [],
+      ...(body.final_publication ? { finalPublication: body.final_publication } : {}),
+      fetchError: null,
+    };
   } catch (e) {
     return { bids: [], fetchError: e instanceof Error ? e.message : 'fetch failed' };
   }
@@ -184,6 +198,15 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
         </summary>
         <section className="pt-4">
           <h2 className="mb-3 font-heading text-lg font-semibold">Portal sync status</h2>
+          {portalResult.finalPublication?.latest && (
+            <p className="mb-3 tabular-nums" data-testid="final-portal-status">
+              Final assignments: {portalResult.finalPublication.counts.done ?? 0} synced,{' '}
+              {(portalResult.finalPublication.counts.queued ?? 0) +
+                (portalResult.finalPublication.counts.in_flight ?? 0)}{' '}
+              pending, {portalResult.finalPublication.counts.failed ?? 0} failed,{' '}
+              {portalResult.finalPublication.counts.superseded ?? 0} superseded.
+            </p>
+          )}
           {portalResult.fetchError !== null && (
             <div
               role="alert"
@@ -192,11 +215,16 @@ export default async function ExportsPage({ searchParams }: PageProps): Promise<
               Portal sync status could not be loaded. Refresh the page to try again.
             </div>
           )}
-          {portalResult.fetchError === null && portalResult.bids.length === 0 ? (
-            <p>No bids tracked for this session yet.</p>
-          ) : (
-            <PortalSyncStatus bids={portalResult.bids} />
-          )}
+          {portalResult.fetchError === null ? (
+            portalResult.bids.length === 0 ? (
+              portalResult.finalPublication?.latest ? null : (
+                <p>Final assignments have not been published for this session.</p>
+              )
+            ) : (
+              <PortalSyncStatus bids={portalResult.bids} />
+            )
+          ) : null}
+          <FinalPortalPublicationControls sessionId={sid} />
         </section>
       </details>
     </main>

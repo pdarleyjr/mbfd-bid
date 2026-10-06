@@ -17,6 +17,12 @@ import { bidSessions, bids, portalWritebackQueue } from '../../db/schema.js';
 import { auditInsertStatement } from '../../lib/audit.js';
 import { chunkedInArrayMutate, chunkedInArraySelect } from '../../lib/d1-batch.js';
 import { requireStepUpAuth } from '../../middleware/require-step-up.js';
+import { drainFinalOutbox, finalPublicationStatus } from '../../portal-writeback/final-outbox.js';
+import { previewFinalPublication } from '../../portal-writeback/final-preview.js';
+import {
+  FinalPublicationBodySchema,
+  publicationJson,
+} from '../../portal-writeback/final-source.js';
 import { isPortalPublicationEnabled } from '../../portal-writeback/publication-policy.js';
 import type { WorkerEnv } from '../../types/env.js';
 import { requireAdmin } from './middleware.js';
@@ -78,7 +84,141 @@ router.get('/portal-status/:session_id', async (c) => {
     .from(bids)
     .where(and(eq(bids.bidSessionId, sid), inArray(bids.portalSyncStatus, ['pending', 'failed'])))
     .all();
-  return c.json({ bids: rows });
+  return c.json({ bids: rows, final_publication: await finalPublicationStatus(c.env.DB, sid) });
+});
+
+for (const operation of ['preview', 'publish'] as const) {
+  router.post(`/portal-final/:session_id/${operation}`, requireStepUpAuth(), async (c) => {
+    const parsed = FinalPublicationBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json({ error: 'invalid_final_source', issues: parsed.error.issues }, 400);
+    const body = parsed.data;
+    const sessionId = c.req.param('session_id');
+    const preview = await previewFinalPublication(c.env.DB, sessionId, body);
+    if (!preview.ok)
+      return c.json({ error: 'final_reconciliation_required', issues: preview.issues }, 409);
+    const status = await finalPublicationStatus(c.env.DB, sessionId);
+    if (operation === 'preview')
+      return c.json({
+        session_id: sessionId,
+        source_sequence: preview.sequence,
+        source_result_hash: preview.resultHash,
+        source_workbook_sha256: body.workbook_sha256,
+        manifest_sha256: preview.manifestHash,
+        hub_identity_receipt_sha256: body.hub_identity_receipt_sha256,
+        confirmation_phrase: preview.confirmationPhrase,
+        counts: preview.counts,
+        metadata_overrides: preview.overrides,
+        assignments: preview.payloads,
+        publication: status,
+        publication_enabled:
+          isPortalPublicationEnabled(c.env) &&
+          !!c.env.PORTAL_QUEUE &&
+          typeof c.env.PORTAL_QUEUE.send === 'function',
+        side_effects: 0,
+      });
+    if (!isPortalPublicationEnabled(c.env))
+      return c.json({ error: 'portal_writeback_disabled' }, 409);
+    if (!c.env.PORTAL_QUEUE || typeof c.env.PORTAL_QUEUE.send !== 'function')
+      return c.json({ error: 'portal_queue_not_configured' }, 503);
+    if (body.confirmation_phrase !== preview.confirmationPhrase)
+      return c.json(
+        { error: 'confirmation_phrase_mismatch', expected: preview.confirmationPhrase },
+        400,
+      );
+    const nowMs = Date.now();
+    await c.env.DB.batch([
+      c.env.DB.prepare(`INSERT OR IGNORE INTO final_portal_publications
+        (id,bid_session_id,source_sequence,source_result_hash,source_workbook_sha256,manifest_sha256,
+          manifest_json,hub_identity_receipt_sha256,actor_member_id,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(
+        preview.publicationId,
+        sessionId,
+        preview.sequence,
+        preview.resultHash,
+        body.workbook_sha256,
+        preview.manifestHash,
+        preview.manifestJson,
+        body.hub_identity_receipt_sha256,
+        c.get('claims').member_id,
+        nowMs,
+      ),
+      c.env.DB.prepare(`INSERT OR IGNORE INTO final_portal_outbox
+        (id,publication_id,employee_id,position_id,assignment_source,payload_json,status,attempts,next_attempt_at)
+        SELECT json_extract(value,'$.idempotency_key'),?,json_extract(value,'$.employee_id'),
+          json_extract(value,'$.position_id'),json_extract(value,'$.assignment_source'),value,'queued',0,?
+          FROM json_each(?)`).bind(preview.publicationId, nowMs, publicationJson(preview.payloads)),
+      c.env.DB.prepare(`UPDATE final_portal_outbox SET status='superseded'
+        WHERE publication_id IN (SELECT id FROM final_portal_publications
+          WHERE bid_session_id=? AND source_sequence<?) AND status<>'superseded'`).bind(
+        sessionId,
+        preview.sequence,
+      ),
+      auditInsertStatement(c.env.DB, {
+        bidSessionId: sessionId,
+        actorType: 'admin',
+        actorId: c.get('claims').member_id,
+        action: 'result_distribution_review',
+        targetKind: 'final_portal_publication',
+        targetId: preview.publicationId,
+        afterState: {
+          source_sequence: preview.sequence,
+          source_result_hash: preview.resultHash,
+          source_workbook_sha256: body.workbook_sha256,
+          manifest_sha256: preview.manifestHash,
+          hub_identity_receipt_sha256: body.hub_identity_receipt_sha256,
+          counts: preview.counts,
+          metadata_overrides: preview.overrides,
+        },
+        reason:
+          'Confirmed final workbook reconciliation and durable employee assignment publication.',
+      }),
+    ]);
+    const sent = await drainFinalOutbox(c.env, sessionId);
+    return c.json({
+      ok: true,
+      publication_id: preview.publicationId,
+      queue_messages_sent: sent,
+      ...(await finalPublicationStatus(c.env.DB, sessionId)),
+    });
+  });
+}
+
+router.post('/portal-final-retry/:outbox_id', requireStepUpAuth(), async (c) => {
+  if (!isPortalPublicationEnabled(c.env))
+    return c.json({ error: 'portal_writeback_disabled' }, 409);
+  const id = c.req.param('outbox_id');
+  const row =
+    await c.env.DB.prepare(`SELECT o.status,p.bid_session_id,p.source_sequence,c.current_seq
+    FROM final_portal_outbox o JOIN final_portal_publications p ON p.id=o.publication_id
+    JOIN canonical_bid_session_state c ON c.bid_session_id=p.bid_session_id WHERE o.id=?`)
+      .bind(id)
+      .first<{
+        status: string;
+        bid_session_id: string;
+        source_sequence: number;
+        current_seq: number;
+      }>();
+  if (!row) return c.json({ error: 'not_found' }, 404);
+  if (row.status !== 'failed' || row.current_seq !== row.source_sequence)
+    return c.json({ error: 'current_failed_publication_required' }, 409);
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE final_portal_outbox SET status='queued',attempts=0,last_error=NULL,next_attempt_at=?
+      WHERE id=? AND status='failed'`).bind(Date.now(), id),
+    auditInsertStatement(c.env.DB, {
+      bidSessionId: row.bid_session_id,
+      actorType: 'admin',
+      actorId: c.get('claims').member_id,
+      action: 'portal_writeback_retry',
+      targetKind: 'final_portal_outbox',
+      targetId: id,
+      reason: 'Authorized retry of a current final assignment publication.',
+    }),
+  ]);
+  return c.json({
+    ok: true,
+    queue_messages_sent: await drainFinalOutbox(c.env, row.bid_session_id),
+  });
 });
 
 const ClearYearBody = z.object({

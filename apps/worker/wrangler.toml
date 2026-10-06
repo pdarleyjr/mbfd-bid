@@ -46,9 +46,18 @@ bucket_name = "mbfd-bid-exports-production-v2"
 [env.production.browser]
 binding = "BROWSER"
 
-# No production Queue binding is declared. Writeback is disabled, its writer
-# credential is intentionally absent, and an external-writeback consumer count
-# must remain zero until an independently authorized future release.
+# Dedicated final-assignment delivery infrastructure. Publication remains OFF
+# until the secured Hub receiver and the dedicated writer are verified.
+[[env.production.queues.producers]]
+binding = "PORTAL_QUEUE"
+queue = "mbfd-bid-portal-writeback-production"
+
+[[env.production.queues.consumers]]
+queue = "mbfd-bid-portal-writeback-production"
+max_batch_size = 20
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "mbfd-bid-portal-writeback-production-dlq"
 
 [triggers]
 # Plan 08: 04:15 UTC daily portal reconciliation.

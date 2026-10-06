@@ -63,8 +63,14 @@ describe('production deployment and isolated test configuration', () => {
     expect(config).toContain('PORTAL_BASE_URL = "https://www.mbfdhub.com"');
     expect(config).toContain('WEB_BASE_URL = "https://bid.mbfdhub.com"');
     expect(config).toContain('PORTAL_WRITEBACK_ENABLED = "false"');
-    expect(config).not.toContain('[[env.production.queues.producers]]');
-    expect(config).not.toContain('[[env.production.queues.consumers]]');
+    expect(config).toContain('[[env.production.queues.producers]]');
+    expect(config).toContain('[[env.production.queues.consumers]]');
+    expect(config).toContain('binding = "PORTAL_QUEUE"');
+    expect(config).toContain('queue = "mbfd-bid-portal-writeback-production"');
+    expect(config).toContain('dead_letter_queue = "mbfd-bid-portal-writeback-production-dlq"');
+    expect(config).toContain(
+      'PORTAL_WRITEBACK_BASE_URL = "https://portal-writeback-disabled.invalid"',
+    );
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).not.toMatch(/\n\s+push:|\n\s+pull_request:/);
     expect(workflow).toContain('node scripts/assert-production-d1-migration-guard.mjs');

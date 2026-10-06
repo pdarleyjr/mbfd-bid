@@ -22,8 +22,32 @@ for (const retired of [
 const worker = read('apps/worker/wrangler.toml');
 const production = worker.match(/\[env\.production\][\s\S]*?(?=\n\[triggers\])/)?.[0];
 assert.ok(production, 'Production configuration is missing');
+// This release adds only separately authorized final-assignment queues.
+// Normalize that exact reviewed delta before checking the retained baseline.
+const finalQueueConfiguration = `# Dedicated final-assignment delivery infrastructure. Publication remains OFF
+# until the secured Hub receiver and the dedicated writer are verified.
+[[env.production.queues.producers]]
+binding = "PORTAL_QUEUE"
+queue = "mbfd-bid-portal-writeback-production"
+
+[[env.production.queues.consumers]]
+queue = "mbfd-bid-portal-writeback-production"
+max_batch_size = 20
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "mbfd-bid-portal-writeback-production-dlq"`;
+assert.ok(
+  production.includes(finalQueueConfiguration),
+  'Exact reviewed final-publication queue configuration is required',
+);
+const retainedProduction = production.replace(
+  finalQueueConfiguration,
+  `# No production Queue binding is declared. Writeback is disabled, its writer
+# credential is intentionally absent, and an external-writeback consumer count
+# must remain zero until an independently authorized future release.`,
+);
 assert.equal(
-  createHash('sha256').update(production).digest('hex'),
+  createHash('sha256').update(retainedProduction).digest('hex'),
   'cce0a7cc357450c43cd83023ed47fb0ad538c4b4cb9910b96f58c7ce54931b96',
   'Retirement changed the exact production Worker configuration from bbe99aed',
 );
@@ -102,5 +126,5 @@ for (const directory of ['apps/worker/src', 'apps/web/app', 'apps/web/lib']) {
   }
 }
 process.stdout.write(
-  'PASS: retired activation/network targets removed; production configuration identical; tests isolated; production backup remains manual.\n',
+  'PASS: retired activation/network targets removed; production baseline preserved with reviewed disabled-publication queues; tests isolated; production backup remains manual.\n',
 );

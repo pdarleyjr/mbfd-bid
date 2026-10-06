@@ -64,6 +64,9 @@ const ResultsSchema = z.object({
       station: nullableText,
       unit: nullableText,
       aDay: nullableText,
+      rank: nullableText.optional(),
+      division: nullableText.optional(),
+      finalSource: z.boolean().optional(),
       memberships: z.array(z.object({ id: z.string(), label: z.string() })).optional(),
       pool: z
         .object({
@@ -77,6 +80,20 @@ const ResultsSchema = z.object({
         .optional(),
     }),
   ),
+  retainedAssignments: z
+    .array(
+      z.object({
+        positionId: z.string(),
+        positionName: z.string(),
+        unit: z.string(),
+        rank: z.string(),
+        shift: z.string(),
+        station: z.string(),
+        aDay: z.string(),
+        name: nullableText,
+      }),
+    )
+    .optional(),
   completion: z.object({ verified: z.boolean(), blockers: z.array(z.string()) }),
 });
 type Session = z.infer<typeof SessionSchema>;
@@ -282,10 +299,17 @@ function RunResults({
                           ))}
                         </TableCell>
                         <TableCell>
-                          {award.pool?.label ?? award.positionName ?? award.positionId}
+                          {award.finalSource
+                            ? award.unit
+                            : (award.pool?.label ?? award.positionName ?? award.positionId)}
                           <span className="block text-xs text-muted-foreground">
                             {award.positionId}
-                            {award.unit ? ` · ${award.unit}` : ''}
+                            {award.finalSource
+                              ? ` · ${award.positionName}`
+                              : award.unit
+                                ? ` · ${award.unit}`
+                                : ''}
+                            {award.rank ? ` · ${award.rank}` : ''}
                           </span>
                         </TableCell>
                         <TableCell>
@@ -299,6 +323,27 @@ function RunResults({
               </div>
             )}
           </section>
+          {results.retainedAssignments?.length ? (
+            <section aria-label="Retained assignments">
+              <h3 className="font-semibold">Retained assignments</h3>
+              <p className="text-sm">
+                These assignments were retained outside the competitive bid.
+              </p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                {results.retainedAssignments.map((row) => (
+                  <div key={row.positionId} className="rounded border border-border p-3 text-sm">
+                    <p className="font-semibold">{row.name ?? 'Frozen name unavailable'}</p>
+                    <p>
+                      {row.unit} · {row.positionName} · {row.rank}
+                    </p>
+                    <p>
+                      {row.shift} · {row.station} · {row.aDay}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       ) : null}
     </div>
