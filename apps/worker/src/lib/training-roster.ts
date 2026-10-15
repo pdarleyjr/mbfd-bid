@@ -1,6 +1,7 @@
 import { RANK_LABELS, type Rank } from '@mbfd/shared';
 import { loadDepartmentPersonnel } from './department-personnel.js';
 import { isCalendarDate, loadDepartmentRosterProjection } from './department-roster.js';
+import type { EmploymentStatus } from './personnel-lifecycle.js';
 
 export interface TrainingRosterMember {
   employee_id: string;
@@ -12,6 +13,8 @@ export interface TrainingRosterMember {
   assignment_source: string | null;
   effective_from: string | null;
   effective_to: string | null;
+  employment_status: EmploymentStatus;
+  /** Bridge availability only; Hub must also require its canonical active employee. */
   eligible: boolean;
 }
 
@@ -76,7 +79,11 @@ export async function loadTrainingRoster(db: D1Database, asOf: string) {
       assignment_source: assignment?.originType ?? null,
       effective_from: assignment?.effectiveFrom ?? null,
       effective_to: assignment?.effectiveTo ?? null,
-      eligible: member.employmentStatus === 'active',
+      employment_status: member.employmentStatus,
+      // The operational roster includes imported assignments whose lifecycle status
+      // is still unknown. Preserve that evidence; Hub independently requires an
+      // active canonical employee. This does not authorize Bid personnel mutations.
+      eligible: member.employmentStatus === 'active' || member.employmentStatus === 'unknown',
     });
   }
   return {
