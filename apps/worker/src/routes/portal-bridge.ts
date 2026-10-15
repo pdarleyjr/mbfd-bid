@@ -38,6 +38,8 @@ import {
   isValidPin,
   setBidPin,
 } from '../lib/bid-pin.js';
+import { operationalDate } from '../lib/operational-date.js';
+import { loadTrainingRoster } from '../lib/training-roster.js';
 import type { WorkerEnv } from '../types/env.js';
 
 const router = new Hono<{ Bindings: WorkerEnv }>();
@@ -60,6 +62,18 @@ router.use('*', async (c, next) => {
   }
   await next();
   return;
+});
+
+router.get('/training-roster', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  try {
+    const result = await loadTrainingRoster(c.env.DB, c.req.query('as_of') ?? operationalDate());
+    if (!result.ok)
+      return c.json({ error: result.error }, result.error === 'invalid_as_of' ? 400 : 503);
+    return c.json(result.payload);
+  } catch {
+    return c.json({ error: 'training_roster_unavailable' }, 503);
+  }
 });
 
 router.get('/members/:employee_id/credentials', async (c) => {
