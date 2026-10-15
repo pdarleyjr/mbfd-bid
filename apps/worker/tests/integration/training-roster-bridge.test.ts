@@ -55,6 +55,7 @@ describe('training roster bridge', () => {
       rank: 'Firefighter',
       shift: 'Days',
       assignment_id: 'old-assignment',
+      employment_status: 'active',
       eligible: true,
     });
     expect(payload.members[0]).not.toHaveProperty('credentials');
@@ -76,6 +77,36 @@ describe('training roster bridge', () => {
       ((await response.json()) as { members: TrainingRosterMember[] }).members[0]?.assignment_id,
     ).toBe('old-assignment');
   });
+
+  it('preserves unknown lifecycle status on available operational assignments for Hub active-identity verification', async () => {
+    await h.db.run("UPDATE members SET employment_status = 'unknown'");
+    const response = await request('2026-10-15');
+    expect(response.status).toBe(200);
+    expect(
+      ((await response.json()) as { members: TrainingRosterMember[] }).members[0],
+    ).toMatchObject({
+      employment_status: 'unknown',
+      eligible: true,
+      assignment_id: 'old-assignment',
+      shift: 'Days',
+    });
+  });
+
+  it.each(['inactive', 'retired', 'separated'])(
+    'excludes explicit %s personnel even with an effective assignment',
+    async (status) => {
+      await h.db.run('UPDATE members SET employment_status = ?', [status]);
+      const response = await request('2026-10-15');
+      expect(response.status).toBe(200);
+      expect(
+        ((await response.json()) as { members: TrainingRosterMember[] }).members[0],
+      ).toMatchObject({
+        employment_status: status,
+        eligible: false,
+        assignment_id: 'old-assignment',
+      });
+    },
+  );
 
   it('reports inactive personnel as ineligible and leaves unavailable assignments null', async () => {
     await h.db.run(
