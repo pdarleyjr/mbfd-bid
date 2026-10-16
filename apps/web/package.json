@@ -31,7 +31,7 @@
     "jose": "5.9.4",
     "lucide-react": "0.453.0",
     "nanoid": "5.1.16",
-    "next": "15.5.24",
+    "next": "15.5.27",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "read-excel-file": "9.3.10",
